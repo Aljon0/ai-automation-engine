@@ -13,6 +13,8 @@ import cors from "cors";
 import { config } from "./config";
 import { healthRouter } from "./routes/health";
 import { tasksRouter } from "./routes/tasks";
+import { workflowsRouter } from "./routes/workflows";
+import { uploadRouter } from "./routes/upload";
 
 const app = express();
 
@@ -42,6 +44,8 @@ app.use((req: Request, _res: Response, next: NextFunction) => {
 
 app.use("/health", healthRouter);
 app.use("/api/tasks", tasksRouter);
+app.use("/api/workflows", workflowsRouter);
+app.use("/api/upload", uploadRouter);
 
 // 404 — unmatched routes
 app.use((_req: Request, res: Response) => {
@@ -64,4 +68,6 @@ app.listen(config.port, () => {
   console.log(`[server] CORS origin: ${config.corsOrigin}`);
   console.log(`[server] Health check: http://localhost:${config.port}/health`);
   console.log(`[server] Tasks API:    http://localhost:${config.port}/api/tasks`);
+  console.log(`[server] Workflows API: http://localhost:${config.port}/api/workflows`);
+  console.log(`[server] Upload API:    http://localhost:${config.port}/api/upload`);
 });

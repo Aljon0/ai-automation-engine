@@ -1,14 +1,8 @@
 /**
  * services/workflow.service.ts
  *
- * Handles all workflow-related database operations:
- * 1. Look up a workflow from the registry by intent key
- * 2. Create a pending execution record
- * 3. Trigger the n8n webhook
- * 4. Update the execution record with the result
- *
- * This service is the bridge between intent detection and n8n execution.
- * The route handler calls this — it never touches the DB or n8n directly.
+ * Phase 4 update: executeWorkflow now accepts optional file metadata.
+ * File fields are passed to n8n webhook and saved to execution record.
  */
 
 import { getSupabaseClient } from "../lib/supabase";
@@ -35,8 +29,17 @@ export interface WorkflowExecutionRow {
   status: "pending" | "success" | "failed";
   result: Record<string, unknown> | null;
   error: string | null;
+  file_url: string | null;
+  file_name: string | null;
+  file_type: string | null;
   created_at: string;
   completed_at: string | null;
+}
+
+export interface FileMetadata {
+  file_url: string;
+  file_name: string;
+  file_type: string;
 }
 
 export interface ExecuteWorkflowResult {
@@ -52,10 +55,6 @@ export interface ExecuteWorkflowResult {
 // Registry lookup
 // ---------------------------------------------------------------------------
 
-/**
- * Finds an active workflow by intent key.
- * Returns null if no matching active workflow exists.
- */
 export async function findWorkflowByIntent(
   intent_key: string
 ): Promise<WorkflowRegistryRow | null> {
@@ -69,7 +68,6 @@ export async function findWorkflowByIntent(
     .single();
 
   if (error) {
-    // PGRST116 = no rows found — not a real error
     if (error.code === "PGRST116") return null;
     throw new Error(`Failed to query workflow registry: ${error.message}`);
   }
@@ -81,19 +79,23 @@ export async function findWorkflowByIntent(
 // Execution tracking
 // ---------------------------------------------------------------------------
 
-/**
- * Creates a pending execution record before triggering n8n.
- * Gives us a record even if n8n fails.
- */
 async function createExecution(
   workflow_id: string,
-  input: string
+  input: string,
+  file?: FileMetadata
 ): Promise<WorkflowExecutionRow> {
   const supabase = getSupabaseClient();
 
   const { data, error } = await supabase
     .from("workflow_executions")
-    .insert({ workflow_id, input, status: "pending" })
+    .insert({
+      workflow_id,
+      input,
+      status: "pending",
+      file_url: file?.file_url ?? null,
+      file_name: file?.file_name ?? null,
+      file_type: file?.file_type ?? null,
+    })
     .select()
     .single();
 
@@ -104,9 +106,6 @@ async function createExecution(
   return data as WorkflowExecutionRow;
 }
 
-/**
- * Updates an execution record after n8n responds.
- */
 async function updateExecution(
   execution_id: string,
   update: {
@@ -128,7 +127,6 @@ async function updateExecution(
     .eq("id", execution_id);
 
   if (error) {
-    // Log but don't throw — the workflow already ran, don't fail the response
     console.error(
       `[workflow.service] Failed to update execution ${execution_id}: ${error.message}`
     );
@@ -140,27 +138,35 @@ async function updateExecution(
 // ---------------------------------------------------------------------------
 
 /**
- * Executes a workflow end-to-end:
- * 1. Creates a pending execution record
- * 2. Triggers the n8n webhook
- * 3. Updates the execution record with success/failure
- * 4. Returns a structured result
+ * Executes a workflow end-to-end.
+ * Phase 4: accepts optional file metadata passed to n8n webhook payload.
  *
  * @param workflow - The workflow registry row to execute
  * @param input    - The raw user input string
+ * @param file     - Optional file metadata from a prior upload
  */
 export async function executeWorkflow(
   workflow: WorkflowRegistryRow,
-  input: string
+  input: string,
+  file?: FileMetadata
 ): Promise<ExecuteWorkflowResult> {
-  // 1. Create pending record — exists even if n8n fails
-  const execution = await createExecution(workflow.id, input);
+  // 1. Create pending record
+  const execution = await createExecution(workflow.id, input, file);
 
   try {
-    // 2. Trigger n8n webhook
-    const n8nResult = await triggerWebhook(workflow.webhook_url, { input });
+    // 2. Build n8n payload — include file fields if present
+    const webhookPayload: Record<string, unknown> = { input };
 
-    // 3. Update execution as success
+    if (file) {
+      webhookPayload.file_url = file.file_url;
+      webhookPayload.file_name = file.file_name;
+      webhookPayload.file_type = file.file_type;
+    }
+
+    // 3. Trigger n8n webhook
+    const n8nResult = await triggerWebhook(workflow.webhook_url, webhookPayload);
+
+    // 4. Update execution as success
     await updateExecution(execution.id, {
       status: "success",
       result: n8nResult,
@@ -177,7 +183,6 @@ export async function executeWorkflow(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
 
-    // 4. Update execution as failed
     await updateExecution(execution.id, {
       status: "failed",
       error: message,
