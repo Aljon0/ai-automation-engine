@@ -3,15 +3,14 @@
 /**
  * app/page.tsx
  *
- * Phase 4 update — File Upload System
+ * Phase 5 update — Execution Tracking
  *
  * Additions:
- * - FileUpload component — drag & drop or click to select CSV/PDF/DOCX
- * - Two-step submission: upload file first, then submit task with file_url
- * - Attached file shown in ResultCard
+ * - "View Runs" nav link in header pointing to /runs
  */
 
 import { useState, useEffect, useRef } from "react";
+import Link from "next/link";
 import {
   submitTask,
   fetchWorkflows,
@@ -128,7 +127,13 @@ export default function HomePage() {
     <main className="min-h-screen bg-zinc-950 text-zinc-100 font-mono flex flex-col items-center justify-center px-4 py-16">
 
       {/* Header */}
-      <div className="mb-10 text-center">
+      <div className="mb-10 text-center relative">
+        <Link
+          href="/runs"
+          className="absolute right-0 top-0 text-xs text-zinc-500 hover:text-zinc-300 transition-colors border border-zinc-800 rounded-md px-3 py-1.5"
+        >
+          View Runs
+        </Link>
         <p className="text-xs tracking-[0.3em] text-zinc-500 uppercase mb-3">
           AI Workflow Automation Engine
         </p>

@@ -42,7 +42,7 @@ export interface TaskResponse {
   status: "success" | "failed";
   result: Record<string, unknown> | null;
   error: string | null;
-  file_name?: string;
+  file_name: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -172,4 +172,85 @@ export async function submitTask(
       }),
     }),
   });
+}
+
+// ---------------------------------------------------------------------------
+// Shared types — mirror backend/src/services/execution.service.ts shapes
+// ---------------------------------------------------------------------------
+
+export interface ExecutionListItem {
+  id: string;
+  workflow_id: string;
+  workflow_name: string;
+  intent_key: string;
+  input: string;
+  status: "pending" | "success" | "failed";
+  file_name: string | null;
+  file_type: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface ExecutionDetail extends ExecutionListItem {
+  file_url: string | null;
+  result: Record<string, unknown> | null;
+  error: string | null;
+}
+
+export interface ListExecutionsResult {
+  executions: ExecutionListItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface ExecutionStats {
+  total: number;
+  success: number;
+  failed: number;
+  pending: number;
+}
+
+export interface ListExecutionsOptions {
+  limit?: number;
+  offset?: number;
+  status?: "pending" | "success" | "failed";
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5 — Execution history
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/executions
+ * Fetches paginated list of workflow executions, newest first.
+ */
+export async function fetchExecutions(
+  options: ListExecutionsOptions = {}
+): Promise<ListExecutionsResult> {
+  const params = new URLSearchParams();
+  if (options.limit) params.set("limit", String(options.limit));
+  if (options.offset) params.set("offset", String(options.offset));
+  if (options.status) params.set("status", options.status);
+
+  const query = params.toString() ? `?${params.toString()}` : "";
+  return apiRequest<ListExecutionsResult>(`/api/executions${query}`);
+}
+
+/**
+ * GET /api/executions/stats
+ * Fetches summary counts by status.
+ */
+export async function fetchExecutionStats(): Promise<ExecutionStats> {
+  return apiRequest<ExecutionStats>("/api/executions/stats");
+}
+
+/**
+ * GET /api/executions/:id
+ * Fetches full detail of a single execution.
+ */
+export async function fetchExecutionById(
+  id: string
+): Promise<ExecutionDetail> {
+  return apiRequest<ExecutionDetail>(`/api/executions/${id}`);
 }
