@@ -39,6 +39,10 @@ exports.config = {
         // Optional: used if N8N_BASIC_AUTH_ACTIVE=true in docker-compose
         apiKey: optional_env("N8N_API_KEY", ""),
     },
+    // Groq — AI inference for intent classification (Phase 3)
+    groq: {
+        apiKey: require_env("GROQ_API_KEY"),
+    },
     // CORS — the frontend origin allowed to call this backend
     corsOrigin: optional_env("CORS_ORIGIN", "http://localhost:3000"),
 };

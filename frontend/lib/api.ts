@@ -254,3 +254,91 @@ export async function fetchExecutionById(
 ): Promise<ExecutionDetail> {
   return apiRequest<ExecutionDetail>(`/api/executions/${id}`);
 }
+
+// ---------------------------------------------------------------------------
+// Phase 7 — SSE streaming types and client
+// ---------------------------------------------------------------------------
+
+export type ExecutionEventType =
+  | "intent_detected"
+  | "workflow_selected"
+  | "n8n_triggered"
+  | "completed"
+  | "failed"
+  | "error";
+
+export interface ExecutionEvent {
+  type: ExecutionEventType;
+  timestamp: string;
+  data: Record<string, unknown>;
+}
+
+export interface StreamCallbacks {
+  onIntent?: (data: ExecutionEvent["data"]) => void;
+  onWorkflowSelected?: (data: ExecutionEvent["data"]) => void;
+  onN8nTriggered?: (data: ExecutionEvent["data"]) => void;
+  onCompleted?: (data: ExecutionEvent["data"]) => void;
+  onFailed?: (data: ExecutionEvent["data"]) => void;
+  onError?: (data: ExecutionEvent["data"]) => void;
+}
+
+/**
+ * GET /api/stream/:executionId
+ *
+ * Opens an SSE connection for a specific execution and calls
+ * the appropriate callback as each event arrives.
+ *
+ * Returns a cleanup function — call it to close the stream early
+ * (e.g. on component unmount).
+ *
+ * @param executionId - UUID from POST /api/tasks response
+ * @param callbacks   - Handler for each event type
+ * @returns close function
+ */
+export function streamExecution(
+  executionId: string,
+  callbacks: StreamCallbacks
+): () => void {
+  const url = `${BASE_URL}/api/stream/${executionId}`;
+  const source = new EventSource(url);
+
+  source.onmessage = (event) => {
+    try {
+      const parsed: ExecutionEvent = JSON.parse(event.data);
+
+      switch (parsed.type) {
+        case "intent_detected":
+          callbacks.onIntent?.(parsed.data);
+          break;
+        case "workflow_selected":
+          callbacks.onWorkflowSelected?.(parsed.data);
+          break;
+        case "n8n_triggered":
+          callbacks.onN8nTriggered?.(parsed.data);
+          break;
+        case "completed":
+          callbacks.onCompleted?.(parsed.data);
+          source.close(); // close after final event
+          break;
+        case "failed":
+          callbacks.onFailed?.(parsed.data);
+          source.close();
+          break;
+        case "error":
+          callbacks.onError?.(parsed.data);
+          source.close();
+          break;
+      }
+    } catch {
+      // Ignore malformed events
+    }
+  };
+
+  source.onerror = () => {
+    callbacks.onError?.({ message: "Stream connection lost" });
+    source.close();
+  };
+
+  // Return cleanup function for React useEffect
+  return () => source.close();
+}

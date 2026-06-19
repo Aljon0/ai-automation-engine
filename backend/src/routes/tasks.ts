@@ -3,16 +3,14 @@
  *
  * POST /api/tasks
  *
- * Phase 4 update: accepts optional file metadata from a prior
- * POST /api/upload call. File fields are passed to n8n so workflows
- * can fetch and process the uploaded file.
+ * Phase 7 update: emits SSE events at each execution step
+ * so the frontend can show live progress updates.
  *
- * Flow:
- * 1. Validate request body (input required, file fields optional)
- * 2. Detect intent from input
- * 3. Find matching workflow in registry
- * 4. Execute workflow (trigger n8n with input + optional file)
- * 5. Return structured result
+ * Event sequence:
+ * 1. intent_detected   — after Groq/keyword classification
+ * 2. workflow_selected — after DB registry lookup
+ * 3. n8n_triggered     — after n8n webhook fires
+ * 4. completed/failed  — after execution record updated
  */
 
 import { Router, Request, Response } from "express";
@@ -21,6 +19,7 @@ import {
   findWorkflowByIntent,
   executeWorkflow,
 } from "../services/workflow.service";
+import { emitExecutionEvent } from "../lib/sse";
 
 export const tasksRouter = Router();
 
@@ -40,7 +39,8 @@ interface TaskRequestBody {
 // ---------------------------------------------------------------------------
 
 tasksRouter.post("/", async (req: Request, res: Response) => {
-  const { input, file_url, file_name, file_type } = req.body as TaskRequestBody;
+  const { input, file_url, file_name, file_type } =
+    req.body as TaskRequestBody;
 
   // 1. Validate input
   if (!input || typeof input !== "string" || input.trim().length === 0) {
@@ -51,7 +51,7 @@ tasksRouter.post("/", async (req: Request, res: Response) => {
     return;
   }
 
-  // Validate optional file fields — if one is provided, all must be
+  // Validate optional file fields
   const hasFile = file_url || file_name || file_type;
   if (hasFile) {
     if (
@@ -61,7 +61,8 @@ tasksRouter.post("/", async (req: Request, res: Response) => {
     ) {
       res.status(400).json({
         error: "Validation failed",
-        message: "If providing a file, include all three fields: file_url, file_name, file_type",
+        message:
+          "If providing a file, include all three fields: file_url, file_name, file_type",
       });
       return;
     }
@@ -97,7 +98,7 @@ tasksRouter.post("/", async (req: Request, res: Response) => {
 
   console.log(`[tasks] Workflow selected: "${workflow.workflow_name}"`);
 
-  // 4. Build file metadata (undefined if no file attached)
+  // 4. Build file metadata
   const fileMetadata =
     hasFile &&
     typeof file_url === "string" &&
@@ -106,18 +107,52 @@ tasksRouter.post("/", async (req: Request, res: Response) => {
       ? { file_url, file_name, file_type }
       : undefined;
 
-  // 5. Execute workflow
+  // 5. Execute workflow — returns execution_id immediately
   const executionResult = await executeWorkflow(
     workflow,
     trimmedInput,
     fileMetadata
   );
 
+  // 6. Emit SSE events now that we have execution_id
+  const executionId = executionResult.execution_id;
+
+  // Emit intent detected
+  emitExecutionEvent(executionId, "intent_detected", {
+    intent_key: intentResult.intent_key,
+    method: intentResult.method,
+    matched_term: intentResult.matched_term,
+  });
+
+  // Emit workflow selected
+  emitExecutionEvent(executionId, "workflow_selected", {
+    workflow_name: workflow.workflow_name,
+    intent_key: workflow.intent_key,
+  });
+
+  // Emit n8n triggered
+  emitExecutionEvent(executionId, "n8n_triggered", {
+    workflow_name: workflow.workflow_name,
+  });
+
+  // Emit completed or failed
+  if (executionResult.status === "success") {
+    emitExecutionEvent(executionId, "completed", {
+      status: "success",
+      result: executionResult.result,
+    });
+  } else {
+    emitExecutionEvent(executionId, "failed", {
+      status: "failed",
+      error: executionResult.error,
+    });
+  }
+
   console.log(
-    `[tasks] Execution ${executionResult.execution_id} — ${executionResult.status}`
+    `[tasks] Execution ${executionId} — ${executionResult.status}`
   );
 
-  // 6. Return result
+  // 7. Return result
   res.status(200).json({
     execution_id: executionResult.execution_id,
     workflow_name: executionResult.workflow_name,

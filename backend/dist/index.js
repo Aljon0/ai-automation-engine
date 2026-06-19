@@ -16,6 +16,10 @@ const cors_1 = __importDefault(require("cors"));
 const config_1 = require("./config");
 const health_1 = require("./routes/health");
 const tasks_1 = require("./routes/tasks");
+const workflows_1 = require("./routes/workflows");
+const upload_1 = require("./routes/upload");
+const executions_1 = require("./routes/executions");
+const extract_1 = require("./routes/extract");
 const app = (0, express_1.default)();
 // ---------------------------------------------------------------------------
 // Middleware
@@ -36,6 +40,10 @@ app.use((req, _res, next) => {
 // ---------------------------------------------------------------------------
 app.use("/health", health_1.healthRouter);
 app.use("/api/tasks", tasks_1.tasksRouter);
+app.use("/api/workflows", workflows_1.workflowsRouter);
+app.use("/api/upload", upload_1.uploadRouter);
+app.use("/api/executions", executions_1.executionsRouter);
+app.use("/api/extract", extract_1.extractRouter);
 // 404 — unmatched routes
 app.use((_req, res) => {
     res.status(404).json({ error: "Not found" });
@@ -54,4 +62,8 @@ app.listen(config_1.config.port, () => {
     console.log(`[server] CORS origin: ${config_1.config.corsOrigin}`);
     console.log(`[server] Health check: http://localhost:${config_1.config.port}/health`);
     console.log(`[server] Tasks API:    http://localhost:${config_1.config.port}/api/tasks`);
+    console.log(`[server] Workflows API: http://localhost:${config_1.config.port}/api/workflows`);
+    console.log(`[server] Upload API:    http://localhost:${config_1.config.port}/api/upload`);
+    console.log(`[server] Executions API: http://localhost:${config_1.config.port}/api/executions`);
+    console.log(`[server] Extract API:    http://localhost:${config_1.config.port}/api/extract`);
 });

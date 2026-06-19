@@ -16,6 +16,7 @@ import { tasksRouter } from "./routes/tasks";
 import { workflowsRouter } from "./routes/workflows";
 import { uploadRouter } from "./routes/upload";
 import { executionsRouter } from "./routes/executions";
+import { extractRouter } from "./routes/extract";
 
 const app = express();
 
@@ -48,6 +49,7 @@ app.use("/api/tasks", tasksRouter);
 app.use("/api/workflows", workflowsRouter);
 app.use("/api/upload", uploadRouter);
 app.use("/api/executions", executionsRouter);
+app.use("/api/extract", extractRouter);
 
 // 404 — unmatched routes
 app.use((_req: Request, res: Response) => {
@@ -73,4 +75,5 @@ app.listen(config.port, () => {
   console.log(`[server] Workflows API: http://localhost:${config.port}/api/workflows`);
   console.log(`[server] Upload API:    http://localhost:${config.port}/api/upload`);
   console.log(`[server] Executions API: http://localhost:${config.port}/api/executions`);
+  console.log(`[server] Extract API:    http://localhost:${config.port}/api/extract`);
 });

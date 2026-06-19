@@ -3,36 +3,52 @@
 /**
  * app/page.tsx
  *
- * Phase 5 update — Execution Tracking
+ * Phase 7 update — Live Updates via SSE
  *
- * Additions:
- * - "View Runs" nav link in header pointing to /runs
+ * Changes:
+ * - Loading state replaced with live pipeline visualization
+ * - Each step lights up as SSE events arrive
+ * - submitTask now opens SSE stream immediately after getting execution_id
  */
 
-import { useState, useEffect, useRef } from "react";
-import Link from "next/link";
 import {
-  submitTask,
   fetchWorkflows,
-  uploadFile,
+  streamExecution,
+  submitTask,
   TaskResponse,
-  WorkflowSummary,
+  uploadFile,
   UploadResponse,
+  WorkflowSummary,
 } from "@/lib/api";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
+type PipelineStep =
+  | "idle"
+  | "intent_detected"
+  | "workflow_selected"
+  | "n8n_triggered"
+  | "completed"
+  | "failed";
+
 type UploadState =
   | { phase: "idle" }
-  | { phase: "uploading"; progress: number }
+  | { phase: "uploading" }
   | { phase: "done"; file: UploadResponse }
   | { phase: "error"; message: string };
 
 type SubmitState =
   | { phase: "idle" }
-  | { phase: "loading" }
+  | {
+      phase: "streaming";
+      executionId: string;
+      step: PipelineStep;
+      workflowName?: string;
+    }
   | { phase: "success"; data: TaskResponse }
   | { phase: "error"; message: string };
 
@@ -59,25 +75,154 @@ const ALLOWED_TYPES = [
 ];
 
 // ---------------------------------------------------------------------------
+// Pipeline steps config
+// ---------------------------------------------------------------------------
+
+const PIPELINE_STEPS: {
+  key: PipelineStep;
+  label: string;
+  description: string;
+}[] = [
+  {
+    key: "intent_detected",
+    label: "Intent Detected",
+    description: "AI classified your request",
+  },
+  {
+    key: "workflow_selected",
+    label: "Workflow Selected",
+    description: "Matched to automation",
+  },
+  {
+    key: "n8n_triggered",
+    label: "n8n Triggered",
+    description: "Automation engine running",
+  },
+  { key: "completed", label: "Completed", description: "Result ready" },
+];
+
+const STEP_ORDER: PipelineStep[] = [
+  "intent_detected",
+  "workflow_selected",
+  "n8n_triggered",
+  "completed",
+];
+
+function getStepState(
+  step: PipelineStep,
+  currentStep: PipelineStep,
+  isFailed: boolean,
+): "done" | "active" | "pending" | "failed" {
+  if (isFailed && step === currentStep) return "failed";
+  const currentIdx = STEP_ORDER.indexOf(currentStep);
+  const stepIdx = STEP_ORDER.indexOf(step);
+  if (stepIdx < currentIdx) return "done";
+  if (stepIdx === currentIdx) return "active";
+  return "pending";
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 export default function HomePage() {
   const [input, setInput] = useState("");
-  const [submitState, setSubmitState] = useState<SubmitState>({ phase: "idle" });
-  const [uploadState, setUploadState] = useState<UploadState>({ phase: "idle" });
-  const [workflowsState, setWorkflowsState] = useState<WorkflowsState>({ phase: "loading" });
+  const [submitState, setSubmitState] = useState<SubmitState>({
+    phase: "idle",
+  });
+  const [uploadState, setUploadState] = useState<UploadState>({
+    phase: "idle",
+  });
+  const [workflowsState, setWorkflowsState] = useState<WorkflowsState>({
+    phase: "loading",
+  });
+  const streamCleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     fetchWorkflows()
       .then(({ workflows }) =>
-        setWorkflowsState({ phase: "success", workflows })
+        setWorkflowsState({ phase: "success", workflows }),
       )
       .catch(() => setWorkflowsState({ phase: "error" }));
   }, []);
 
+  // Cleanup stream on unmount
+  useEffect(() => {
+    return () => {
+      streamCleanupRef.current?.();
+    };
+  }, []);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!input.trim()) return;
+
+    try {
+      const attachedFile =
+        uploadState.phase === "done" ? uploadState.file : undefined;
+
+      // Submit task — get execution_id immediately
+      const taskPromise = submitTask(input.trim(), attachedFile);
+
+      // Start streaming while task executes
+      setSubmitState({ phase: "streaming", executionId: "", step: "idle" });
+
+      const taskResult = await taskPromise;
+      const executionId = taskResult.execution_id;
+
+      // Update state with execution ID
+      setSubmitState({
+        phase: "streaming",
+        executionId,
+        step: "idle",
+        workflowName: taskResult.workflow_name,
+      });
+
+      // Open SSE stream
+      const cleanup = streamExecution(executionId, {
+        onIntent: () => {
+          setSubmitState((prev) =>
+            prev.phase === "streaming"
+              ? { ...prev, step: "intent_detected" }
+              : prev,
+          );
+        },
+        onWorkflowSelected: () => {
+          setSubmitState((prev) =>
+            prev.phase === "streaming"
+              ? { ...prev, step: "workflow_selected" }
+              : prev,
+          );
+        },
+        onN8nTriggered: () => {
+          setSubmitState((prev) =>
+            prev.phase === "streaming"
+              ? { ...prev, step: "n8n_triggered" }
+              : prev,
+          );
+        },
+        onCompleted: () => {
+          setSubmitState({ phase: "success", data: taskResult });
+        },
+        onFailed: () => {
+          setSubmitState({ phase: "success", data: taskResult });
+        },
+        onError: () => {
+          setSubmitState({ phase: "success", data: taskResult });
+        },
+      });
+
+      streamCleanupRef.current = cleanup;
+    } catch (err) {
+      setSubmitState({
+        phase: "error",
+        message: err instanceof Error ? err.message : "Unknown error occurred.",
+      });
+    }
+  }
+
   async function handleFileSelect(file: File) {
-    setUploadState({ phase: "uploading", progress: 0 });
+    setUploadState({ phase: "uploading" });
     try {
       const uploaded = await uploadFile(file);
       setUploadState({ phase: "done", file: uploaded });
@@ -89,43 +234,26 @@ export default function HomePage() {
     }
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!input.trim()) return;
-
-    setSubmitState({ phase: "loading" });
-
-    try {
-      const attachedFile =
-        uploadState.phase === "done" ? uploadState.file : undefined;
-      const data = await submitTask(input.trim(), attachedFile);
-      setSubmitState({ phase: "success", data });
-    } catch (err) {
-      setSubmitState({
-        phase: "error",
-        message: err instanceof Error ? err.message : "Unknown error occurred.",
-      });
-    }
-  }
-
   function handleReset() {
+    streamCleanupRef.current?.();
+    streamCleanupRef.current = null;
     setInput("");
     setSubmitState({ phase: "idle" });
     setUploadState({ phase: "idle" });
   }
 
   function handleWorkflowClick(workflow: WorkflowSummary) {
-    const prompt = INTENT_PROMPTS[workflow.intent_key] ?? workflow.workflow_name;
+    const prompt =
+      INTENT_PROMPTS[workflow.intent_key] ?? workflow.workflow_name;
     setInput(prompt);
     setSubmitState({ phase: "idle" });
   }
 
-  const isSubmitting = submitState.phase === "loading";
+  const isSubmitting = submitState.phase === "streaming";
   const isUploading = uploadState.phase === "uploading";
 
   return (
     <main className="min-h-screen bg-zinc-950 text-zinc-100 font-mono flex flex-col items-center justify-center px-4 py-16">
-
       {/* Header */}
       <div className="mb-10 text-center relative">
         <Link
@@ -146,11 +274,8 @@ export default function HomePage() {
       </div>
 
       <div className="w-full max-w-lg space-y-4">
-
         {/* Task Form */}
         <form onSubmit={handleSubmit} className="space-y-3">
-
-          {/* Text input */}
           <div className="border border-zinc-800 rounded-lg overflow-hidden focus-within:border-zinc-600 transition-colors">
             <textarea
               value={input}
@@ -166,7 +291,9 @@ export default function HomePage() {
               }}
             />
             <div className="px-4 py-2 border-t border-zinc-800 flex items-center justify-between">
-              <span className="text-xs text-zinc-600">Cmd + Enter to submit</span>
+              <span className="text-xs text-zinc-600">
+                Cmd + Enter to submit
+              </span>
               <button
                 type="submit"
                 disabled={isSubmitting || isUploading || !input.trim()}
@@ -187,42 +314,36 @@ export default function HomePage() {
           />
         </form>
 
+        {/* Live Pipeline */}
+        {submitState.phase === "streaming" && (
+          <LivePipeline
+            step={submitState.step}
+            workflowName={submitState.workflowName}
+            failed={false}
+          />
+        )}
+
         {/* Result Card */}
         {submitState.phase === "success" && (
           <ResultCard data={submitState.data} onReset={handleReset} />
         )}
 
-        {/* Submit Error */}
+        {/* Error */}
         {submitState.phase === "error" && (
           <div className="border border-red-800 rounded-lg bg-red-950/40 px-4 py-3 space-y-2">
             <p className="text-xs font-medium text-red-400">Request Failed</p>
             <p className="text-xs text-red-300">{submitState.message}</p>
-            <button onClick={handleReset} className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors">
+            <button
+              onClick={handleReset}
+              className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
+            >
               Try again
             </button>
           </div>
         )}
 
-        {/* Loading steps */}
-        {submitState.phase === "loading" && (
-          <div className="border border-zinc-800 rounded-lg px-4 py-5 space-y-3">
-            <div className="flex items-center gap-3">
-              <span className="w-2 h-2 rounded-full bg-zinc-400 animate-pulse" />
-              <span className="text-xs text-zinc-400">Detecting intent...</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="w-2 h-2 rounded-full bg-zinc-700 animate-pulse" />
-              <span className="text-xs text-zinc-600">Selecting workflow...</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <span className="w-2 h-2 rounded-full bg-zinc-700 animate-pulse" />
-              <span className="text-xs text-zinc-600">Triggering n8n...</span>
-            </div>
-          </div>
-        )}
-
         {/* Available Workflows */}
-        {submitState.phase !== "loading" && (
+        {submitState.phase !== "streaming" && (
           <WorkflowRegistry
             state={workflowsState}
             onSelect={handleWorkflowClick}
@@ -230,6 +351,86 @@ export default function HomePage() {
         )}
       </div>
     </main>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// LivePipeline
+// ---------------------------------------------------------------------------
+
+function LivePipeline({
+  step,
+  workflowName,
+  failed,
+}: {
+  step: PipelineStep;
+  workflowName?: string;
+  failed: boolean;
+}) {
+  return (
+    <div className="border border-zinc-800 rounded-lg overflow-hidden">
+      <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
+        <span className="text-xs text-zinc-500 tracking-widest uppercase">
+          Running
+        </span>
+        {workflowName && (
+          <span className="text-xs text-zinc-400">{workflowName}</span>
+        )}
+      </div>
+      <div className="px-4 py-4 space-y-3">
+        {PIPELINE_STEPS.map((pStep, idx) => {
+          const state = getStepState(pStep.key, step, failed);
+          return (
+            <div key={pStep.key} className="flex items-center gap-3">
+              {/* Step indicator */}
+              <div className="shrink-0 w-5 h-5 rounded-full border flex items-center justify-center">
+                {state === "done" && (
+                  <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center border-0">
+                    <span className="text-[9px] text-white font-bold">✓</span>
+                  </div>
+                )}
+                {state === "active" && (
+                  <div className="w-5 h-5 rounded-full bg-zinc-700 border border-zinc-500 flex items-center justify-center animate-pulse">
+                    <div className="w-2 h-2 rounded-full bg-zinc-300" />
+                  </div>
+                )}
+                {state === "failed" && (
+                  <div className="w-5 h-5 rounded-full bg-red-900 border border-red-700 flex items-center justify-center">
+                    <span className="text-[9px] text-red-400 font-bold">✕</span>
+                  </div>
+                )}
+                {state === "pending" && (
+                  <div className="w-5 h-5 rounded-full border border-zinc-700" />
+                )}
+              </div>
+
+              {/* Step text */}
+              <div className="flex-1 min-w-0">
+                <p
+                  className={`text-xs font-medium ${
+                    state === "done"
+                      ? "text-emerald-400"
+                      : state === "active"
+                        ? "text-zinc-200"
+                        : state === "failed"
+                          ? "text-red-400"
+                          : "text-zinc-600"
+                  }`}
+                >
+                  {pStep.label}
+                </p>
+                <p className="text-xs text-zinc-600">{pStep.description}</p>
+              </div>
+
+              {/* Connector line */}
+              {idx < PIPELINE_STEPS.length - 1 && (
+                <div className="absolute left-9 mt-8 w-px h-3 bg-zinc-800" />
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -244,7 +445,12 @@ interface FileUploadProps {
   disabled: boolean;
 }
 
-function FileUpload({ uploadState, onFileSelect, onClear, disabled }: FileUploadProps) {
+function FileUpload({
+  uploadState,
+  onFileSelect,
+  onClear,
+  disabled,
+}: FileUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -253,25 +459,24 @@ function FileUpload({ uploadState, onFileSelect, onClear, disabled }: FileUpload
     setIsDragging(false);
     if (disabled) return;
     const file = e.dataTransfer.files[0];
-    if (file && ALLOWED_TYPES.includes(file.type)) {
-      onFileSelect(file);
-    }
+    if (file && ALLOWED_TYPES.includes(file.type)) onFileSelect(file);
   }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) onFileSelect(file);
-    // Reset input so same file can be re-selected
     e.target.value = "";
   }
 
-  // Idle or error state — show drop zone
   if (uploadState.phase === "idle" || uploadState.phase === "error") {
     return (
       <div className="space-y-1.5">
         <div
           onClick={() => !disabled && inputRef.current?.click()}
-          onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
           className={`border border-dashed rounded-lg px-4 py-4 text-center cursor-pointer transition-colors ${
@@ -286,13 +491,13 @@ function FileUpload({ uploadState, onFileSelect, onClear, disabled }: FileUpload
               browse
             </span>
           </p>
-          <p className="text-xs text-zinc-700 mt-1">CSV · PDF · DOCX — max 10MB</p>
+          <p className="text-xs text-zinc-700 mt-1">
+            CSV · PDF · DOCX — max 10MB
+          </p>
         </div>
-
         {uploadState.phase === "error" && (
           <p className="text-xs text-red-400 px-1">{uploadState.message}</p>
         )}
-
         <input
           ref={inputRef}
           type="file"
@@ -304,7 +509,6 @@ function FileUpload({ uploadState, onFileSelect, onClear, disabled }: FileUpload
     );
   }
 
-  // Uploading state
   if (uploadState.phase === "uploading") {
     return (
       <div className="border border-zinc-800 rounded-lg px-4 py-3 flex items-center gap-3">
@@ -314,7 +518,6 @@ function FileUpload({ uploadState, onFileSelect, onClear, disabled }: FileUpload
     );
   }
 
-  // Done state — show attached file
   return (
     <div className="border border-zinc-700 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
       <div className="flex items-center gap-2 min-w-0">
@@ -341,15 +544,16 @@ function FileUpload({ uploadState, onFileSelect, onClear, disabled }: FileUpload
 }
 
 // ---------------------------------------------------------------------------
-// WorkflowRegistry
+// WorkflowRegistry + WorkflowCard
 // ---------------------------------------------------------------------------
 
-interface WorkflowRegistryProps {
+function WorkflowRegistry({
+  state,
+  onSelect,
+}: {
   state: WorkflowsState;
-  onSelect: (workflow: WorkflowSummary) => void;
-}
-
-function WorkflowRegistry({ state, onSelect }: WorkflowRegistryProps) {
+  onSelect: (w: WorkflowSummary) => void;
+}) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -357,34 +561,54 @@ function WorkflowRegistry({ state, onSelect }: WorkflowRegistryProps) {
           Available Workflows
         </p>
         {state.phase === "success" && (
-          <span className="text-xs text-zinc-600">{state.workflows.length} active</span>
+          <span className="text-xs text-zinc-600">
+            {state.workflows.length} active
+          </span>
         )}
       </div>
-
       {state.phase === "loading" && (
         <div className="space-y-2">
           {[1, 2].map((i) => (
-            <div key={i} className="h-16 rounded-lg border border-zinc-800 bg-zinc-900/40 animate-pulse" />
+            <div
+              key={i}
+              className="h-16 rounded-lg border border-zinc-800 bg-zinc-900/40 animate-pulse"
+            />
           ))}
         </div>
       )}
-
       {state.phase === "error" && (
         <p className="text-xs text-zinc-600 py-2">
           Could not load workflows — is the backend running?
         </p>
       )}
-
       {state.phase === "success" && state.workflows.length === 0 && (
-        <p className="text-xs text-zinc-600 py-2">
-          No active workflows found. Add one to the registry in Supabase.
-        </p>
+        <p className="text-xs text-zinc-600 py-2">No active workflows found.</p>
       )}
-
       {state.phase === "success" && state.workflows.length > 0 && (
         <div className="space-y-2">
           {state.workflows.map((workflow) => (
-            <WorkflowCard key={workflow.id} workflow={workflow} onSelect={onSelect} />
+            <button
+              key={workflow.id}
+              onClick={() => onSelect(workflow)}
+              className="w-full text-left border border-zinc-800 rounded-lg px-4 py-3 hover:border-zinc-600 hover:bg-zinc-900/60 transition-all group"
+            >
+              <div className="flex items-center justify-between">
+                <div className="space-y-0.5 min-w-0">
+                  <p className="text-xs font-medium text-zinc-300 group-hover:text-zinc-100 transition-colors">
+                    {workflow.workflow_name}
+                  </p>
+                  <p className="text-xs text-zinc-600 truncate">
+                    {workflow.description}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 ml-3">
+                  <span className="text-xs text-zinc-600 font-mono">
+                    {workflow.intent_key}
+                  </span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                </div>
+              </div>
+            </button>
           ))}
         </div>
       )}
@@ -393,72 +617,54 @@ function WorkflowRegistry({ state, onSelect }: WorkflowRegistryProps) {
 }
 
 // ---------------------------------------------------------------------------
-// WorkflowCard
-// ---------------------------------------------------------------------------
-
-function WorkflowCard({
-  workflow,
-  onSelect,
-}: {
-  workflow: WorkflowSummary;
-  onSelect: (w: WorkflowSummary) => void;
-}) {
-  return (
-    <button
-      onClick={() => onSelect(workflow)}
-      className="w-full text-left border border-zinc-800 rounded-lg px-4 py-3
-                 hover:border-zinc-600 hover:bg-zinc-900/60 transition-all group"
-    >
-      <div className="flex items-center justify-between">
-        <div className="space-y-0.5 min-w-0">
-          <p className="text-xs font-medium text-zinc-300 group-hover:text-zinc-100 transition-colors">
-            {workflow.workflow_name}
-          </p>
-          <p className="text-xs text-zinc-600 truncate">{workflow.description}</p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0 ml-3">
-          <span className="text-xs text-zinc-600 font-mono">{workflow.intent_key}</span>
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-        </div>
-      </div>
-    </button>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // ResultCard
 // ---------------------------------------------------------------------------
 
-function ResultCard({ data, onReset }: { data: TaskResponse; onReset: () => void }) {
+function ResultCard({
+  data,
+  onReset,
+}: {
+  data: TaskResponse;
+  onReset: () => void;
+}) {
   const isSuccess = data.status === "success";
-
   return (
-    <div className={`border rounded-lg overflow-hidden ${isSuccess ? "border-zinc-700" : "border-red-800"}`}>
-
-      <div className={`px-4 py-3 border-b flex items-center justify-between ${
-        isSuccess ? "border-zinc-800 bg-zinc-900/60" : "border-red-900 bg-red-950/40"
-      }`}>
-        <div className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full shrink-0 ${isSuccess ? "bg-emerald-400" : "bg-red-500"}`} />
-          <span className="text-xs font-medium text-zinc-200">{data.workflow_name}</span>
-        </div>
-        <span className={`text-xs px-2 py-0.5 rounded-full border ${
+    <div
+      className={`border rounded-lg overflow-hidden ${isSuccess ? "border-zinc-700" : "border-red-800"}`}
+    >
+      <div
+        className={`px-4 py-3 border-b flex items-center justify-between ${
           isSuccess
-            ? "bg-emerald-950 text-emerald-400 border-emerald-800"
-            : "bg-red-950 text-red-400 border-red-800"
-        }`}>
+            ? "border-zinc-800 bg-zinc-900/60"
+            : "border-red-900 bg-red-950/40"
+        }`}
+      >
+        <div className="flex items-center gap-2">
+          <span
+            className={`w-2 h-2 rounded-full shrink-0 ${isSuccess ? "bg-emerald-400" : "bg-red-500"}`}
+          />
+          <span className="text-xs font-medium text-zinc-200">
+            {data.workflow_name}
+          </span>
+        </div>
+        <span
+          className={`text-xs px-2 py-0.5 rounded-full border ${
+            isSuccess
+              ? "bg-emerald-950 text-emerald-400 border-emerald-800"
+              : "bg-red-950 text-red-400 border-red-800"
+          }`}
+        >
           {data.status}
         </span>
       </div>
-
       <div className="px-4 py-3 border-b border-zinc-800/60 flex items-center gap-4 flex-wrap">
         <MetaItem label="Intent" value={data.intent_key} />
-        <MetaItem label="Execution ID" value={data.execution_id.slice(0, 8) + "..."} />
-        {data.file_name && (
-          <MetaItem label="File" value={data.file_name} />
-        )}
+        <MetaItem
+          label="Execution ID"
+          value={data.execution_id.slice(0, 8) + "..."}
+        />
+        {data.file_name && <MetaItem label="File" value={data.file_name} />}
       </div>
-
       <div className="px-4 py-3">
         {isSuccess && data.result ? (
           <div className="space-y-1">
@@ -474,9 +680,11 @@ function ResultCard({ data, onReset }: { data: TaskResponse; onReset: () => void
           </div>
         )}
       </div>
-
       <div className="px-4 py-2 border-t border-zinc-800/60">
-        <button onClick={onReset} className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+        <button
+          onClick={onReset}
+          className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+        >
           Run another task
         </button>
       </div>
