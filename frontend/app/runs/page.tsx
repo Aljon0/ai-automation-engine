@@ -12,17 +12,17 @@
  * - File attachment indicator
  */
 
-import { useState, useEffect } from "react";
-import Link from "next/link";
 import {
+  ExecutionDetail,
+  ExecutionListItem,
+  ExecutionStats,
+  fetchExecutionById,
   fetchExecutions,
   fetchExecutionStats,
-  fetchExecutionById,
-  ExecutionListItem,
-  ExecutionDetail,
-  ExecutionStats,
   ListExecutionsOptions,
 } from "@/lib/api";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -51,9 +51,13 @@ type StatusFilter = "all" | "success" | "failed" | "pending";
 // ---------------------------------------------------------------------------
 
 export default function RunsPage() {
-  const [statsState, setStatsState] = useState<StatsState>({ phase: "loading" });
+  const [statsState, setStatsState] = useState<StatsState>({
+    phase: "loading",
+  });
   const [listState, setListState] = useState<ListState>({ phase: "loading" });
-  const [detailState, setDetailState] = useState<DetailState>({ phase: "idle" });
+  const [detailState, setDetailState] = useState<DetailState>({
+    phase: "idle",
+  });
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -85,7 +89,8 @@ export default function RunsPage() {
         if (!cancelled) {
           setListState({
             phase: "error",
-            message: err instanceof Error ? err.message : "Failed to load executions",
+            message:
+              err instanceof Error ? err.message : "Failed to load executions",
           });
         }
       }
@@ -119,9 +124,8 @@ export default function RunsPage() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-100 font-mono px-4 py-12">
+    <main className="min-h-screen bg-zinc-950 text-zinc-100 font-mono px-4 py-12 pt-20">
       <div className="max-w-3xl mx-auto space-y-8">
-
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
@@ -158,7 +162,7 @@ export default function RunsPage() {
               >
                 {f}
               </button>
-            )
+            ),
           )}
         </div>
 
@@ -310,13 +314,12 @@ function ExecutionRow({
   const isSuccess = execution.status === "success";
   const isFailed = execution.status === "failed";
 
-  const duration =
-    execution.completed_at
-      ? Math.round(
-          (new Date(execution.completed_at).getTime() -
-            new Date(execution.created_at).getTime())
-        ) + "ms"
-      : null;
+  const duration = execution.completed_at
+    ? Math.round(
+        new Date(execution.completed_at).getTime() -
+          new Date(execution.created_at).getTime(),
+      ) + "ms"
+    : null;
 
   return (
     <div
@@ -336,8 +339,8 @@ function ExecutionRow({
               isSuccess
                 ? "bg-emerald-400"
                 : isFailed
-                ? "bg-red-500"
-                : "bg-zinc-500 animate-pulse"
+                  ? "bg-red-500"
+                  : "bg-zinc-500 animate-pulse"
             }`}
           />
 
@@ -360,9 +363,7 @@ function ExecutionRow({
 
           {/* Duration */}
           {duration && (
-            <span className="text-xs text-zinc-600 shrink-0">
-              {duration}
-            </span>
+            <span className="text-xs text-zinc-600 shrink-0">{duration}</span>
           )}
 
           {/* Timestamp */}
@@ -384,7 +385,6 @@ function ExecutionRow({
       {/* Expanded detail */}
       {isExpanded && (
         <div className="border-t border-zinc-800 px-4 py-4 space-y-3 bg-zinc-900/20">
-
           {/* Metadata grid */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <MetaItem label="Intent" value={execution.intent_key} />

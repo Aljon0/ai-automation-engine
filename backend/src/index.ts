@@ -17,6 +17,8 @@ import { workflowsRouter } from "./routes/workflows";
 import { uploadRouter } from "./routes/upload";
 import { executionsRouter } from "./routes/executions";
 import { extractRouter } from "./routes/extract";
+import { streamRouter } from "./routes/stream";
+import { analyticsRouter } from "./routes/analytics";
 
 const app = express();
 
@@ -28,7 +30,7 @@ app.use(
   cors({
     origin: config.corsOrigin,
     methods: ["GET", "POST"],
-    allowedHeaders: ["Content-Type"],
+    allowedHeaders: ["Content-Type", "Cache-Control"],
   })
 );
 
@@ -50,6 +52,8 @@ app.use("/api/workflows", workflowsRouter);
 app.use("/api/upload", uploadRouter);
 app.use("/api/executions", executionsRouter);
 app.use("/api/extract", extractRouter);
+app.use("/api/stream", streamRouter);
+app.use("/api/analytics", analyticsRouter);
 
 // 404 — unmatched routes
 app.use((_req: Request, res: Response) => {
@@ -76,4 +80,6 @@ app.listen(config.port, () => {
   console.log(`[server] Upload API:    http://localhost:${config.port}/api/upload`);
   console.log(`[server] Executions API: http://localhost:${config.port}/api/executions`);
   console.log(`[server] Extract API:    http://localhost:${config.port}/api/extract`);
+  console.log(`[server] Stream API:     http://localhost:${config.port}/api/stream/:id`);
+  console.log(`[server] Analytics API:  http://localhost:${config.port}/api/analytics`);
 });

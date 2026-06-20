@@ -11,17 +11,16 @@
  * - submitTask now opens SSE stream immediately after getting execution_id
  */
 
+import { useState, useEffect, useRef } from "react";
 import {
-  fetchWorkflows,
-  streamExecution,
   submitTask,
-  TaskResponse,
+  fetchWorkflows,
   uploadFile,
-  UploadResponse,
+  streamExecution,
+  TaskResponse,
   WorkflowSummary,
+  UploadResponse,
 } from "@/lib/api";
-import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -43,12 +42,7 @@ type UploadState =
 
 type SubmitState =
   | { phase: "idle" }
-  | {
-      phase: "streaming";
-      executionId: string;
-      step: PipelineStep;
-      workflowName?: string;
-    }
+  | { phase: "streaming"; executionId: string; step: PipelineStep; workflowName?: string }
   | { phase: "success"; data: TaskResponse }
   | { phase: "error"; message: string };
 
@@ -83,22 +77,10 @@ const PIPELINE_STEPS: {
   label: string;
   description: string;
 }[] = [
-  {
-    key: "intent_detected",
-    label: "Intent Detected",
-    description: "AI classified your request",
-  },
-  {
-    key: "workflow_selected",
-    label: "Workflow Selected",
-    description: "Matched to automation",
-  },
-  {
-    key: "n8n_triggered",
-    label: "n8n Triggered",
-    description: "Automation engine running",
-  },
-  { key: "completed", label: "Completed", description: "Result ready" },
+  { key: "intent_detected",   label: "Intent Detected",   description: "AI classified your request" },
+  { key: "workflow_selected", label: "Workflow Selected",  description: "Matched to automation" },
+  { key: "n8n_triggered",     label: "n8n Triggered",      description: "Automation engine running" },
+  { key: "completed",         label: "Completed",          description: "Result ready" },
 ];
 
 const STEP_ORDER: PipelineStep[] = [
@@ -111,7 +93,7 @@ const STEP_ORDER: PipelineStep[] = [
 function getStepState(
   step: PipelineStep,
   currentStep: PipelineStep,
-  isFailed: boolean,
+  isFailed: boolean
 ): "done" | "active" | "pending" | "failed" {
   if (isFailed && step === currentStep) return "failed";
   const currentIdx = STEP_ORDER.indexOf(currentStep);
@@ -127,30 +109,20 @@ function getStepState(
 
 export default function HomePage() {
   const [input, setInput] = useState("");
-  const [submitState, setSubmitState] = useState<SubmitState>({
-    phase: "idle",
-  });
-  const [uploadState, setUploadState] = useState<UploadState>({
-    phase: "idle",
-  });
-  const [workflowsState, setWorkflowsState] = useState<WorkflowsState>({
-    phase: "loading",
-  });
+  const [submitState, setSubmitState] = useState<SubmitState>({ phase: "idle" });
+  const [uploadState, setUploadState] = useState<UploadState>({ phase: "idle" });
+  const [workflowsState, setWorkflowsState] = useState<WorkflowsState>({ phase: "loading" });
   const streamCleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     fetchWorkflows()
-      .then(({ workflows }) =>
-        setWorkflowsState({ phase: "success", workflows }),
-      )
+      .then(({ workflows }) => setWorkflowsState({ phase: "success", workflows }))
       .catch(() => setWorkflowsState({ phase: "error" }));
   }, []);
 
   // Cleanup stream on unmount
   useEffect(() => {
-    return () => {
-      streamCleanupRef.current?.();
-    };
+    return () => { streamCleanupRef.current?.(); };
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -158,8 +130,7 @@ export default function HomePage() {
     if (!input.trim()) return;
 
     try {
-      const attachedFile =
-        uploadState.phase === "done" ? uploadState.file : undefined;
+      const attachedFile = uploadState.phase === "done" ? uploadState.file : undefined;
 
       // Submit task — get execution_id immediately
       const taskPromise = submitTask(input.trim(), attachedFile);
@@ -181,24 +152,24 @@ export default function HomePage() {
       // Open SSE stream
       const cleanup = streamExecution(executionId, {
         onIntent: () => {
-          setSubmitState((prev) =>
+          setSubmitState(prev =>
             prev.phase === "streaming"
               ? { ...prev, step: "intent_detected" }
-              : prev,
+              : prev
           );
         },
         onWorkflowSelected: () => {
-          setSubmitState((prev) =>
+          setSubmitState(prev =>
             prev.phase === "streaming"
               ? { ...prev, step: "workflow_selected" }
-              : prev,
+              : prev
           );
         },
         onN8nTriggered: () => {
-          setSubmitState((prev) =>
+          setSubmitState(prev =>
             prev.phase === "streaming"
               ? { ...prev, step: "n8n_triggered" }
-              : prev,
+              : prev
           );
         },
         onCompleted: () => {
@@ -243,8 +214,7 @@ export default function HomePage() {
   }
 
   function handleWorkflowClick(workflow: WorkflowSummary) {
-    const prompt =
-      INTENT_PROMPTS[workflow.intent_key] ?? workflow.workflow_name;
+    const prompt = INTENT_PROMPTS[workflow.intent_key] ?? workflow.workflow_name;
     setInput(prompt);
     setSubmitState({ phase: "idle" });
   }
@@ -253,15 +223,10 @@ export default function HomePage() {
   const isUploading = uploadState.phase === "uploading";
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-100 font-mono flex flex-col items-center justify-center px-4 py-16">
+    <main className="min-h-screen bg-zinc-950 text-zinc-100 font-mono flex flex-col items-center justify-center px-4 py-16 pt-24">
+
       {/* Header */}
-      <div className="mb-10 text-center relative">
-        <Link
-          href="/runs"
-          className="absolute right-0 top-0 text-xs text-zinc-500 hover:text-zinc-300 transition-colors border border-zinc-800 rounded-md px-3 py-1.5"
-        >
-          View Runs
-        </Link>
+      <div className="mb-10 text-center">
         <p className="text-xs tracking-[0.3em] text-zinc-500 uppercase mb-3">
           AI Workflow Automation Engine
         </p>
@@ -272,8 +237,18 @@ export default function HomePage() {
           Describe what you want to do in plain language.
         </p>
       </div>
+        <p className="text-xs tracking-[0.3em] text-zinc-500 uppercase mb-3">
+          AI Workflow Automation Engine
+        </p>
+        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
+          Automate a Task
+        </h1>
+        <p className="text-sm text-zinc-500 mt-2">
+          Describe what you want to do in plain language.
+        </p>
 
       <div className="w-full max-w-lg space-y-4">
+
         {/* Task Form */}
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="border border-zinc-800 rounded-lg overflow-hidden focus-within:border-zinc-600 transition-colors">
@@ -291,9 +266,7 @@ export default function HomePage() {
               }}
             />
             <div className="px-4 py-2 border-t border-zinc-800 flex items-center justify-between">
-              <span className="text-xs text-zinc-600">
-                Cmd + Enter to submit
-              </span>
+              <span className="text-xs text-zinc-600">Cmd + Enter to submit</span>
               <button
                 type="submit"
                 disabled={isSubmitting || isUploading || !input.trim()}
@@ -333,10 +306,7 @@ export default function HomePage() {
           <div className="border border-red-800 rounded-lg bg-red-950/40 px-4 py-3 space-y-2">
             <p className="text-xs font-medium text-red-400">Request Failed</p>
             <p className="text-xs text-red-300">{submitState.message}</p>
-            <button
-              onClick={handleReset}
-              className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
-            >
+            <button onClick={handleReset} className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors">
               Try again
             </button>
           </div>
@@ -344,10 +314,7 @@ export default function HomePage() {
 
         {/* Available Workflows */}
         {submitState.phase !== "streaming" && (
-          <WorkflowRegistry
-            state={workflowsState}
-            onSelect={handleWorkflowClick}
-          />
+          <WorkflowRegistry state={workflowsState} onSelect={handleWorkflowClick} />
         )}
       </div>
     </main>
@@ -406,17 +373,12 @@ function LivePipeline({
 
               {/* Step text */}
               <div className="flex-1 min-w-0">
-                <p
-                  className={`text-xs font-medium ${
-                    state === "done"
-                      ? "text-emerald-400"
-                      : state === "active"
-                        ? "text-zinc-200"
-                        : state === "failed"
-                          ? "text-red-400"
-                          : "text-zinc-600"
-                  }`}
-                >
+                <p className={`text-xs font-medium ${
+                  state === "done" ? "text-emerald-400" :
+                  state === "active" ? "text-zinc-200" :
+                  state === "failed" ? "text-red-400" :
+                  "text-zinc-600"
+                }`}>
                   {pStep.label}
                 </p>
                 <p className="text-xs text-zinc-600">{pStep.description}</p>
@@ -445,12 +407,7 @@ interface FileUploadProps {
   disabled: boolean;
 }
 
-function FileUpload({
-  uploadState,
-  onFileSelect,
-  onClear,
-  disabled,
-}: FileUploadProps) {
+function FileUpload({ uploadState, onFileSelect, onClear, disabled }: FileUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -473,38 +430,23 @@ function FileUpload({
       <div className="space-y-1.5">
         <div
           onClick={() => !disabled && inputRef.current?.click()}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setIsDragging(true);
-          }}
+          onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
           onDragLeave={() => setIsDragging(false)}
           onDrop={handleDrop}
           className={`border border-dashed rounded-lg px-4 py-4 text-center cursor-pointer transition-colors ${
-            isDragging
-              ? "border-zinc-500 bg-zinc-900/60"
-              : "border-zinc-800 hover:border-zinc-600"
+            isDragging ? "border-zinc-500 bg-zinc-900/60" : "border-zinc-800 hover:border-zinc-600"
           } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
         >
           <p className="text-xs text-zinc-500">
             Attach a file{" "}
-            <span className="text-zinc-400 underline underline-offset-2">
-              browse
-            </span>
+            <span className="text-zinc-400 underline underline-offset-2">browse</span>
           </p>
-          <p className="text-xs text-zinc-700 mt-1">
-            CSV · PDF · DOCX — max 10MB
-          </p>
+          <p className="text-xs text-zinc-700 mt-1">CSV · PDF · DOCX — max 10MB</p>
         </div>
         {uploadState.phase === "error" && (
           <p className="text-xs text-red-400 px-1">{uploadState.message}</p>
         )}
-        <input
-          ref={inputRef}
-          type="file"
-          accept={ALLOWED_EXTENSIONS}
-          onChange={handleChange}
-          className="hidden"
-        />
+        <input ref={inputRef} type="file" accept={ALLOWED_EXTENSIONS} onChange={handleChange} className="hidden" />
       </div>
     );
   }
@@ -523,12 +465,8 @@ function FileUpload({
       <div className="flex items-center gap-2 min-w-0">
         <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
         <div className="min-w-0">
-          <p className="text-xs text-zinc-300 truncate">
-            {uploadState.file.file_name}
-          </p>
-          <p className="text-xs text-zinc-600">
-            {(uploadState.file.file_size / 1024).toFixed(1)}KB · ready
-          </p>
+          <p className="text-xs text-zinc-300 truncate">{uploadState.file.file_name}</p>
+          <p className="text-xs text-zinc-600">{(uploadState.file.file_size / 1024).toFixed(1)}KB · ready</p>
         </div>
       </div>
       <button
@@ -547,39 +485,24 @@ function FileUpload({
 // WorkflowRegistry + WorkflowCard
 // ---------------------------------------------------------------------------
 
-function WorkflowRegistry({
-  state,
-  onSelect,
-}: {
-  state: WorkflowsState;
-  onSelect: (w: WorkflowSummary) => void;
-}) {
+function WorkflowRegistry({ state, onSelect }: { state: WorkflowsState; onSelect: (w: WorkflowSummary) => void }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs tracking-widest text-zinc-600 uppercase">
-          Available Workflows
-        </p>
+        <p className="text-xs tracking-widest text-zinc-600 uppercase">Available Workflows</p>
         {state.phase === "success" && (
-          <span className="text-xs text-zinc-600">
-            {state.workflows.length} active
-          </span>
+          <span className="text-xs text-zinc-600">{state.workflows.length} active</span>
         )}
       </div>
       {state.phase === "loading" && (
         <div className="space-y-2">
           {[1, 2].map((i) => (
-            <div
-              key={i}
-              className="h-16 rounded-lg border border-zinc-800 bg-zinc-900/40 animate-pulse"
-            />
+            <div key={i} className="h-16 rounded-lg border border-zinc-800 bg-zinc-900/40 animate-pulse" />
           ))}
         </div>
       )}
       {state.phase === "error" && (
-        <p className="text-xs text-zinc-600 py-2">
-          Could not load workflows — is the backend running?
-        </p>
+        <p className="text-xs text-zinc-600 py-2">Could not load workflows — is the backend running?</p>
       )}
       {state.phase === "success" && state.workflows.length === 0 && (
         <p className="text-xs text-zinc-600 py-2">No active workflows found.</p>
@@ -597,14 +520,10 @@ function WorkflowRegistry({
                   <p className="text-xs font-medium text-zinc-300 group-hover:text-zinc-100 transition-colors">
                     {workflow.workflow_name}
                   </p>
-                  <p className="text-xs text-zinc-600 truncate">
-                    {workflow.description}
-                  </p>
+                  <p className="text-xs text-zinc-600 truncate">{workflow.description}</p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0 ml-3">
-                  <span className="text-xs text-zinc-600 font-mono">
-                    {workflow.intent_key}
-                  </span>
+                  <span className="text-xs text-zinc-600 font-mono">{workflow.intent_key}</span>
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
                 </div>
               </div>
@@ -620,49 +539,26 @@ function WorkflowRegistry({
 // ResultCard
 // ---------------------------------------------------------------------------
 
-function ResultCard({
-  data,
-  onReset,
-}: {
-  data: TaskResponse;
-  onReset: () => void;
-}) {
+function ResultCard({ data, onReset }: { data: TaskResponse; onReset: () => void }) {
   const isSuccess = data.status === "success";
   return (
-    <div
-      className={`border rounded-lg overflow-hidden ${isSuccess ? "border-zinc-700" : "border-red-800"}`}
-    >
-      <div
-        className={`px-4 py-3 border-b flex items-center justify-between ${
-          isSuccess
-            ? "border-zinc-800 bg-zinc-900/60"
-            : "border-red-900 bg-red-950/40"
-        }`}
-      >
+    <div className={`border rounded-lg overflow-hidden ${isSuccess ? "border-zinc-700" : "border-red-800"}`}>
+      <div className={`px-4 py-3 border-b flex items-center justify-between ${
+        isSuccess ? "border-zinc-800 bg-zinc-900/60" : "border-red-900 bg-red-950/40"
+      }`}>
         <div className="flex items-center gap-2">
-          <span
-            className={`w-2 h-2 rounded-full shrink-0 ${isSuccess ? "bg-emerald-400" : "bg-red-500"}`}
-          />
-          <span className="text-xs font-medium text-zinc-200">
-            {data.workflow_name}
-          </span>
+          <span className={`w-2 h-2 rounded-full shrink-0 ${isSuccess ? "bg-emerald-400" : "bg-red-500"}`} />
+          <span className="text-xs font-medium text-zinc-200">{data.workflow_name}</span>
         </div>
-        <span
-          className={`text-xs px-2 py-0.5 rounded-full border ${
-            isSuccess
-              ? "bg-emerald-950 text-emerald-400 border-emerald-800"
-              : "bg-red-950 text-red-400 border-red-800"
-          }`}
-        >
+        <span className={`text-xs px-2 py-0.5 rounded-full border ${
+          isSuccess ? "bg-emerald-950 text-emerald-400 border-emerald-800" : "bg-red-950 text-red-400 border-red-800"
+        }`}>
           {data.status}
         </span>
       </div>
       <div className="px-4 py-3 border-b border-zinc-800/60 flex items-center gap-4 flex-wrap">
         <MetaItem label="Intent" value={data.intent_key} />
-        <MetaItem
-          label="Execution ID"
-          value={data.execution_id.slice(0, 8) + "..."}
-        />
+        <MetaItem label="Execution ID" value={data.execution_id.slice(0, 8) + "..."} />
         {data.file_name && <MetaItem label="File" value={data.file_name} />}
       </div>
       <div className="px-4 py-3">
@@ -681,10 +577,7 @@ function ResultCard({
         )}
       </div>
       <div className="px-4 py-2 border-t border-zinc-800/60">
-        <button
-          onClick={onReset}
-          className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
-        >
+        <button onClick={onReset} className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
           Run another task
         </button>
       </div>

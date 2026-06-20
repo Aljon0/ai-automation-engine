@@ -3,14 +3,8 @@
  *
  * POST /api/tasks
  *
- * Phase 7 update: emits SSE events at each execution step
- * so the frontend can show live progress updates.
- *
- * Event sequence:
- * 1. intent_detected   — after Groq/keyword classification
- * 2. workflow_selected — after DB registry lookup
- * 3. n8n_triggered     — after n8n webhook fires
- * 4. completed/failed  — after execution record updated
+ * Phase 9 update: requires authentication.
+ * Attaches user_id to execution record.
  */
 
 import { Router, Request, Response } from "express";
@@ -20,12 +14,9 @@ import {
   executeWorkflow,
 } from "../services/workflow.service";
 import { emitExecutionEvent } from "../lib/sse";
+import { requireAuth } from "../middleware/auth";
 
 export const tasksRouter = Router();
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 interface TaskRequestBody {
   input?: unknown;
@@ -34,15 +25,12 @@ interface TaskRequestBody {
   file_type?: unknown;
 }
 
-// ---------------------------------------------------------------------------
-// POST /api/tasks
-// ---------------------------------------------------------------------------
-
-tasksRouter.post("/", async (req: Request, res: Response) => {
+tasksRouter.post("/", requireAuth, async (req: Request, res: Response) => {
   const { input, file_url, file_name, file_type } =
     req.body as TaskRequestBody;
 
-  // 1. Validate input
+  const userId = req.user!.id;
+
   if (!input || typeof input !== "string" || input.trim().length === 0) {
     res.status(400).json({
       error: "Validation failed",
@@ -51,7 +39,6 @@ tasksRouter.post("/", async (req: Request, res: Response) => {
     return;
   }
 
-  // Validate optional file fields
   const hasFile = file_url || file_name || file_type;
   if (hasFile) {
     if (
@@ -61,16 +48,13 @@ tasksRouter.post("/", async (req: Request, res: Response) => {
     ) {
       res.status(400).json({
         error: "Validation failed",
-        message:
-          "If providing a file, include all three fields: file_url, file_name, file_type",
+        message: "If providing a file, include all three fields: file_url, file_name, file_type",
       });
       return;
     }
   }
 
   const trimmedInput = input.trim();
-
-  // 2. Detect intent
   const intentResult = await detectIntent(trimmedInput);
 
   if (!isIntentDetected(intentResult)) {
@@ -81,11 +65,8 @@ tasksRouter.post("/", async (req: Request, res: Response) => {
     return;
   }
 
-  console.log(
-    `[tasks] Intent detected: "${intentResult.intent_key}" via ${intentResult.method}`
-  );
+  console.log(`[tasks] Intent: "${intentResult.intent_key}" via ${intentResult.method} — user: ${userId.slice(0, 8)}`);
 
-  // 3. Find matching workflow
   const workflow = await findWorkflowByIntent(intentResult.intent_key);
 
   if (!workflow) {
@@ -96,9 +77,6 @@ tasksRouter.post("/", async (req: Request, res: Response) => {
     return;
   }
 
-  console.log(`[tasks] Workflow selected: "${workflow.workflow_name}"`);
-
-  // 4. Build file metadata
   const fileMetadata =
     hasFile &&
     typeof file_url === "string" &&
@@ -107,35 +85,30 @@ tasksRouter.post("/", async (req: Request, res: Response) => {
       ? { file_url, file_name, file_type }
       : undefined;
 
-  // 5. Execute workflow — returns execution_id immediately
   const executionResult = await executeWorkflow(
     workflow,
     trimmedInput,
-    fileMetadata
+    fileMetadata,
+    userId
   );
 
-  // 6. Emit SSE events now that we have execution_id
   const executionId = executionResult.execution_id;
 
-  // Emit intent detected
   emitExecutionEvent(executionId, "intent_detected", {
     intent_key: intentResult.intent_key,
     method: intentResult.method,
     matched_term: intentResult.matched_term,
   });
 
-  // Emit workflow selected
   emitExecutionEvent(executionId, "workflow_selected", {
     workflow_name: workflow.workflow_name,
     intent_key: workflow.intent_key,
   });
 
-  // Emit n8n triggered
   emitExecutionEvent(executionId, "n8n_triggered", {
     workflow_name: workflow.workflow_name,
   });
 
-  // Emit completed or failed
   if (executionResult.status === "success") {
     emitExecutionEvent(executionId, "completed", {
       status: "success",
@@ -148,11 +121,6 @@ tasksRouter.post("/", async (req: Request, res: Response) => {
     });
   }
 
-  console.log(
-    `[tasks] Execution ${executionId} — ${executionResult.status}`
-  );
-
-  // 7. Return result
   res.status(200).json({
     execution_id: executionResult.execution_id,
     workflow_name: executionResult.workflow_name,

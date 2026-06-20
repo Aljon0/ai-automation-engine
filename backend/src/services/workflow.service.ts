@@ -82,7 +82,8 @@ export async function findWorkflowByIntent(
 async function createExecution(
   workflow_id: string,
   input: string,
-  file?: FileMetadata
+  file?: FileMetadata,
+  userId?: string
 ): Promise<WorkflowExecutionRow> {
   const supabase = getSupabaseClient();
 
@@ -95,6 +96,7 @@ async function createExecution(
       file_url: file?.file_url ?? null,
       file_name: file?.file_name ?? null,
       file_type: file?.file_type ?? null,
+      user_id: userId ?? null,
     })
     .select()
     .single();
@@ -148,10 +150,11 @@ async function updateExecution(
 export async function executeWorkflow(
   workflow: WorkflowRegistryRow,
   input: string,
-  file?: FileMetadata
+  file?: FileMetadata,
+  userId?: string
 ): Promise<ExecuteWorkflowResult> {
   // 1. Create pending record
-  const execution = await createExecution(workflow.id, input, file);
+  const execution = await createExecution(workflow.id, input, file, userId);
 
   try {
     // 2. Build n8n payload — include file fields if present

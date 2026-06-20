@@ -11,6 +11,22 @@
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 // ---------------------------------------------------------------------------
+// Auth token helper
+// ---------------------------------------------------------------------------
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+  try {
+    // Dynamic import avoids circular dependency
+    const { getToken } = await import("./auth");
+    const token = await getToken();
+    if (token) return { Authorization: `Bearer ${token}` };
+  } catch {
+    // Not logged in — return empty headers
+  }
+  return {};
+}
+
+// ---------------------------------------------------------------------------
 // Shared types — mirror backend/src/routes/health.ts shapes
 // ---------------------------------------------------------------------------
 
@@ -54,9 +70,13 @@ async function apiRequest<T>(
   options?: RequestInit
 ): Promise<T> {
   const url = `${BASE_URL}${path}`;
+  const authHeaders = await getAuthHeaders();
 
   const res = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeaders,
+    },
     ...options,
   });
 
@@ -133,15 +153,15 @@ export interface UploadResponse {
  */
 export async function uploadFile(file: File): Promise<UploadResponse> {
   const url = `${BASE_URL}/api/upload`;
+  const authHeaders = await getAuthHeaders();
 
   const formData = new FormData();
   formData.append("file", file);
 
   const res = await fetch(url, {
     method: "POST",
+    headers: { ...authHeaders },
     body: formData,
-    // No Content-Type header — browser sets it automatically
-    // with the correct multipart boundary for FormData
   });
 
   if (!res.ok) {
@@ -341,4 +361,58 @@ export function streamExecution(
 
   // Return cleanup function for React useEffect
   return () => source.close();
+}
+
+// ---------------------------------------------------------------------------
+// Shared types — mirror backend/src/services/analytics.service.ts
+// ---------------------------------------------------------------------------
+
+export interface SummaryMetrics {
+  total_executions: number;
+  successful_executions: number;
+  failed_executions: number;
+  pending_executions: number;
+  success_rate: number;
+  avg_duration_ms: number;
+  active_workflows: number;
+}
+
+export interface WorkflowMetric {
+  workflow_id: string;
+  workflow_name: string;
+  intent_key: string;
+  total_runs: number;
+  successful_runs: number;
+  failed_runs: number;
+  success_rate: number;
+  avg_duration_ms: number;
+}
+
+export interface RecentExecution {
+  id: string;
+  workflow_name: string;
+  intent_key: string;
+  input: string;
+  status: "pending" | "success" | "failed";
+  duration_ms: number | null;
+  created_at: string;
+}
+
+export interface AnalyticsData {
+  summary: SummaryMetrics;
+  by_workflow: WorkflowMetric[];
+  recent: RecentExecution[];
+  generated_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8 — Analytics
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /api/analytics
+ * Fetches all dashboard metrics in a single call.
+ */
+export async function fetchAnalytics(): Promise<AnalyticsData> {
+  return apiRequest<AnalyticsData>("/api/analytics");
 }
