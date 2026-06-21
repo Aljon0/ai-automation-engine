@@ -1,7 +1,6 @@
 import "dotenv/config";
 
 // WebSocket polyfill required by @supabase/supabase-js in Node.js 20
-// Must be imported before any Supabase client is initialized
 import { WebSocket } from "ws";
 if (!globalThis.WebSocket) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -19,6 +18,12 @@ import { executionsRouter } from "./routes/executions";
 import { extractRouter } from "./routes/extract";
 import { streamRouter } from "./routes/stream";
 import { analyticsRouter } from "./routes/analytics";
+import { requestIdMiddleware } from "./middleware/requestId";
+import {
+  aiRateLimit,
+  uploadRateLimit,
+  readRateLimit,
+} from "./middleware/rateLimit";
 
 const app = express();
 
@@ -30,40 +35,46 @@ app.use(
   cors({
     origin: config.corsOrigin,
     methods: ["GET", "POST"],
-    allowedHeaders: ["Content-Type", "Cache-Control"],
+    allowedHeaders: ["Content-Type", "Cache-Control", "Authorization"],
   })
 );
 
 app.use(express.json());
+app.use(requestIdMiddleware);
 
-// Request logger — lightweight, no dependency needed
+// Request logger
 app.use((req: Request, _res: Response, next: NextFunction) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  console.log(
+    `[${new Date().toISOString()}] ${req.method} ${req.path} — ${req.requestId?.slice(0, 8)}`
+  );
   next();
 });
 
 // ---------------------------------------------------------------------------
-// Routes
+// Routes — with rate limits applied per route type
 // ---------------------------------------------------------------------------
 
 app.use("/health", healthRouter);
-app.use("/api/tasks", tasksRouter);
-app.use("/api/workflows", workflowsRouter);
-app.use("/api/upload", uploadRouter);
-app.use("/api/executions", executionsRouter);
-app.use("/api/extract", extractRouter);
+app.use("/api/tasks", aiRateLimit, tasksRouter);
+app.use("/api/workflows", readRateLimit, workflowsRouter);
+app.use("/api/upload", uploadRateLimit, uploadRouter);
+app.use("/api/executions", readRateLimit, executionsRouter);
+app.use("/api/extract", aiRateLimit, extractRouter);
 app.use("/api/stream", streamRouter);
-app.use("/api/analytics", analyticsRouter);
+app.use("/api/analytics", readRateLimit, analyticsRouter);
 
-// 404 — unmatched routes
+// 404
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: "Not found" });
 });
 
-// Global error handler
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  console.error(`[error] ${err.message}`);
-  res.status(500).json({ error: "Internal server error" });
+// Global error handler — includes request ID for tracing
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+  console.error(`[error] ${req.requestId?.slice(0, 8)} — ${err.message}`);
+  res.status(500).json({
+    error: "Internal server error",
+    request_id: req.requestId,
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -74,12 +85,5 @@ app.listen(config.port, () => {
   console.log(`[server] Running on http://localhost:${config.port}`);
   console.log(`[server] Environment: ${config.nodeEnv}`);
   console.log(`[server] CORS origin: ${config.corsOrigin}`);
-  console.log(`[server] Health check: http://localhost:${config.port}/health`);
-  console.log(`[server] Tasks API:    http://localhost:${config.port}/api/tasks`);
-  console.log(`[server] Workflows API: http://localhost:${config.port}/api/workflows`);
-  console.log(`[server] Upload API:    http://localhost:${config.port}/api/upload`);
-  console.log(`[server] Executions API: http://localhost:${config.port}/api/executions`);
-  console.log(`[server] Extract API:    http://localhost:${config.port}/api/extract`);
-  console.log(`[server] Stream API:     http://localhost:${config.port}/api/stream/:id`);
-  console.log(`[server] Analytics API:  http://localhost:${config.port}/api/analytics`);
+  console.log(`[server] Rate limiting: enabled`);
 });

@@ -3,13 +3,7 @@
 /**
  * app/runs/page.tsx
  *
- * Phase 5 — Workflow Execution History
- *
- * Shows all past workflow executions with:
- * - Summary stats header (total, success, failed)
- * - Filterable execution list (all, success, failed)
- * - Expandable rows showing full result JSON
- * - File attachment indicator
+ * Phase 10 — Redesigned Workflow Runs Page
  */
 
 import {
@@ -47,6 +41,30 @@ type DetailState =
 type StatusFilter = "all" | "success" | "failed" | "pending";
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function formatDuration(ms: number | null): string {
+  if (!ms) return "—";
+  const absMs = Math.abs(ms);
+  if (absMs < 1000) return `${absMs}ms`;
+  return `${(absMs / 1000).toFixed(1)}s`;
+}
+
+function formatTimeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  if (hours < 24) return `${hours}h ago`;
+  return `${days}d ago`;
+}
+
+const STATUS_FILTERS: StatusFilter[] = ["all", "success", "failed", "pending"];
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
@@ -61,7 +79,6 @@ export default function RunsPage() {
   const [filter, setFilter] = useState<StatusFilter>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  // Load stats once on mount
   useEffect(() => {
     fetchExecutionStats()
       .then((data) => setStatsState({ phase: "success", data }))
@@ -108,188 +125,240 @@ export default function RunsPage() {
       setDetailState({ phase: "idle" });
       return;
     }
-
     setExpandedId(execution.id);
     setDetailState({ phase: "loading", id: execution.id });
-
     try {
       const data = await fetchExecutionById(execution.id);
       setDetailState({ phase: "success", data });
     } catch (err) {
       setDetailState({
         phase: "error",
-        message: err instanceof Error ? err.message : "Failed to load detail",
+        message: err instanceof Error ? err.message : "Failed to load",
       });
     }
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-100 font-mono px-4 py-12 pt-20">
-      <div className="max-w-3xl mx-auto space-y-8">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs tracking-[0.3em] text-zinc-500 uppercase mb-1">
-              AI Workflow Automation Engine
-            </p>
-            <h1 className="text-xl font-semibold tracking-tight">
-              Workflow Runs
-            </h1>
-          </div>
+    <div className="page-container">
+      {/* Header */}
+      <div style={{ marginBottom: "2rem" }}>
+        <h1
+          style={{
+            fontSize: "1.5rem",
+            fontWeight: 700,
+            marginBottom: "0.5rem",
+          }}
+        >
+          Workflow Runs
+        </h1>
+        <p style={{ fontSize: "0.875rem", color: "var(--color-text-muted)" }}>
+          History of all automation executions.
+        </p>
+      </div>
+
+      {/* Stats */}
+      {statsState.phase === "loading" && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(4, 1fr)",
+            gap: "0.75rem",
+            marginBottom: "1.5rem",
+          }}
+        >
+          {[1, 2, 3, 4].map((i) => (
+            <div
+              key={i}
+              style={{
+                height: 80,
+                borderRadius: 12,
+                background: "var(--color-surface)",
+                animation: "pulse 1.5s infinite",
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {statsState.phase === "success" && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(2, 1fr)",
+            gap: "0.75rem",
+            marginBottom: "1.5rem",
+          }}
+        >
+          {[
+            {
+              label: "Total",
+              value: statsState.data.total,
+              color: "var(--color-text)",
+            },
+            {
+              label: "Success",
+              value: statsState.data.success,
+              color: "var(--color-success)",
+            },
+            {
+              label: "Failed",
+              value: statsState.data.failed,
+              color: "var(--color-error)",
+            },
+            {
+              label: "Pending",
+              value: statsState.data.pending,
+              color: "var(--color-text-muted)",
+            },
+          ].map(({ label, value, color }) => (
+            <div
+              key={label}
+              className="card"
+              style={{ padding: "1rem 1.25rem" }}
+            >
+              <p
+                style={{
+                  fontSize: "0.75rem",
+                  color: "var(--color-text-muted)",
+                  marginBottom: "0.375rem",
+                }}
+              >
+                {label}
+              </p>
+              <p
+                style={{
+                  fontSize: "1.75rem",
+                  fontWeight: 700,
+                  color,
+                  letterSpacing: "-0.03em",
+                }}
+              >
+                {value}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Filter tabs */}
+      <div
+        style={{
+          display: "flex",
+          gap: "0.25rem",
+          borderBottom: "1px solid var(--color-border-subtle)",
+          marginBottom: "1rem",
+        }}
+      >
+        {STATUS_FILTERS.map((f) => (
+          <button
+            key={f}
+            onClick={() => setFilter(f)}
+            style={{
+              fontSize: "0.8125rem",
+              fontWeight: filter === f ? 500 : 400,
+              color:
+                filter === f ? "var(--color-text)" : "var(--color-text-subtle)",
+              background: "none",
+              border: "none",
+              borderBottom: `2px solid ${filter === f ? "var(--color-text)" : "transparent"}`,
+              padding: "0.5rem 0.75rem",
+              marginBottom: -1,
+              cursor: "pointer",
+              textTransform: "capitalize",
+              transition: "color 0.15s",
+            }}
+          >
+            {f}
+          </button>
+        ))}
+      </div>
+
+      {/* List */}
+      {listState.phase === "loading" && (
+        <div
+          style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}
+        >
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div
+              key={i}
+              style={{
+                height: 56,
+                borderRadius: 8,
+                background: "var(--color-surface)",
+                animation: "pulse 1.5s infinite",
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {listState.phase === "error" && (
+        <div
+          className="card"
+          style={{ borderColor: "var(--color-error)", padding: "1rem 1.25rem" }}
+        >
+          <p style={{ fontSize: "0.875rem", color: "var(--color-error)" }}>
+            {listState.message}
+          </p>
+        </div>
+      )}
+
+      {listState.phase === "success" && listState.executions.length === 0 && (
+        <div
+          className="card"
+          style={{ padding: "3rem 1.25rem", textAlign: "center" }}
+        >
+          <p
+            style={{
+              fontSize: "0.875rem",
+              color: "var(--color-text-muted)",
+              marginBottom: "0.75rem",
+            }}
+          >
+            No executions found.
+          </p>
           <Link
             href="/"
-            className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors border border-zinc-800 rounded-md px-3 py-1.5"
+            style={{
+              fontSize: "0.8125rem",
+              color: "var(--color-text-subtle)",
+              textDecoration: "none",
+            }}
           >
-            New Task
+            Run your first task →
           </Link>
         </div>
-
-        {/* Stats */}
-        <StatsBar state={statsState} />
-
-        {/* Filter tabs */}
-        <div className="flex gap-1 border-b border-zinc-800 pb-0">
-          {(["all", "success", "failed", "pending"] as StatusFilter[]).map(
-            (f) => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`text-xs px-3 py-2 capitalize transition-colors border-b-2 -mb-px ${
-                  filter === f
-                    ? "text-zinc-100 border-zinc-400"
-                    : "text-zinc-500 border-transparent hover:text-zinc-300"
-                }`}
-              >
-                {f}
-              </button>
-            ),
-          )}
-        </div>
-
-        {/* Execution list */}
-        <ExecutionList
-          state={listState}
-          expandedId={expandedId}
-          detailState={detailState}
-          onExpand={handleExpand}
-        />
-      </div>
-    </main>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// StatsBar
-// ---------------------------------------------------------------------------
-
-function StatsBar({ state }: { state: StatsState }) {
-  if (state.phase === "loading") {
-    return (
-      <div className="grid grid-cols-4 gap-3">
-        {[1, 2, 3, 4].map((i) => (
-          <div
-            key={i}
-            className="border border-zinc-800 rounded-lg p-4 animate-pulse bg-zinc-900/40 h-16"
-          />
-        ))}
-      </div>
-    );
-  }
-
-  if (state.phase === "error") return null;
-
-  const stats = [
-    { label: "Total", value: state.data.total, color: "text-zinc-300" },
-    { label: "Success", value: state.data.success, color: "text-emerald-400" },
-    { label: "Failed", value: state.data.failed, color: "text-red-400" },
-    { label: "Pending", value: state.data.pending, color: "text-zinc-500" },
-  ];
-
-  return (
-    <div className="grid grid-cols-4 gap-3">
-      {stats.map(({ label, value, color }) => (
-        <div
-          key={label}
-          className="border border-zinc-800 rounded-lg p-4 space-y-1"
-        >
-          <p className="text-xs text-zinc-600">{label}</p>
-          <p className={`text-xl font-semibold ${color}`}>{value}</p>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// ExecutionList
-// ---------------------------------------------------------------------------
-
-interface ExecutionListProps {
-  state: ListState;
-  expandedId: string | null;
-  detailState: DetailState;
-  onExpand: (execution: ExecutionListItem) => void;
-}
-
-function ExecutionList({
-  state,
-  expandedId,
-  detailState,
-  onExpand,
-}: ExecutionListProps) {
-  if (state.phase === "loading") {
-    return (
-      <div className="space-y-2">
-        {[1, 2, 3, 4, 5].map((i) => (
-          <div
-            key={i}
-            className="border border-zinc-800 rounded-lg h-16 animate-pulse bg-zinc-900/40"
-          />
-        ))}
-      </div>
-    );
-  }
-
-  if (state.phase === "error") {
-    return (
-      <div className="border border-red-800 rounded-lg px-4 py-3">
-        <p className="text-xs text-red-400">{state.message}</p>
-      </div>
-    );
-  }
-
-  if (state.executions.length === 0) {
-    return (
-      <div className="border border-zinc-800 rounded-lg px-6 py-12 text-center">
-        <p className="text-sm text-zinc-500">No executions found.</p>
-        <Link
-          href="/"
-          className="text-xs text-zinc-600 hover:text-zinc-400 mt-2 inline-block transition-colors"
-        >
-          Run your first task →
-        </Link>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-2">
-      {state.phase === "success" && state.total > state.executions.length && (
-        <p className="text-xs text-zinc-600 text-right">
-          Showing {state.executions.length} of {state.total}
-        </p>
       )}
-      {state.executions.map((execution) => (
-        <ExecutionRow
-          key={execution.id}
-          execution={execution}
-          isExpanded={expandedId === execution.id}
-          detailState={
-            expandedId === execution.id ? detailState : { phase: "idle" }
-          }
-          onExpand={() => onExpand(execution)}
-        />
-      ))}
+
+      {listState.phase === "success" && listState.executions.length > 0 && (
+        <div
+          style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}
+        >
+          {listState.total > listState.executions.length && (
+            <p
+              style={{
+                fontSize: "0.75rem",
+                color: "var(--color-text-faint)",
+                textAlign: "right",
+                marginBottom: "0.25rem",
+              }}
+            >
+              Showing {listState.executions.length} of {listState.total}
+            </p>
+          )}
+          {listState.executions.map((execution) => (
+            <ExecutionRow
+              key={execution.id}
+              execution={execution}
+              isExpanded={expandedId === execution.id}
+              detailState={
+                expandedId === execution.id ? detailState : { phase: "idle" }
+              }
+              onExpand={() => handleExpand(execution)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -298,147 +367,297 @@ function ExecutionList({
 // ExecutionRow
 // ---------------------------------------------------------------------------
 
-interface ExecutionRowProps {
-  execution: ExecutionListItem;
-  isExpanded: boolean;
-  detailState: DetailState;
-  onExpand: () => void;
-}
-
 function ExecutionRow({
   execution,
   isExpanded,
   detailState,
   onExpand,
-}: ExecutionRowProps) {
-  const isSuccess = execution.status === "success";
-  const isFailed = execution.status === "failed";
-
+}: {
+  execution: ExecutionListItem;
+  isExpanded: boolean;
+  detailState: DetailState;
+  onExpand: () => void;
+}) {
   const duration = execution.completed_at
-    ? Math.round(
-        new Date(execution.completed_at).getTime() -
-          new Date(execution.created_at).getTime(),
-      ) + "ms"
+    ? new Date(execution.completed_at).getTime() -
+      new Date(execution.created_at).getTime()
     : null;
+
+  const statusColor =
+    execution.status === "success"
+      ? "var(--color-success)"
+      : execution.status === "failed"
+        ? "var(--color-error)"
+        : "var(--color-text-faint)";
 
   return (
     <div
-      className={`border rounded-lg overflow-hidden transition-colors ${
-        isExpanded ? "border-zinc-600" : "border-zinc-800"
-      }`}
+      className="card"
+      style={{
+        borderColor: isExpanded
+          ? "var(--color-border)"
+          : "var(--color-border-subtle)",
+        transition: "border-color 0.15s",
+      }}
     >
-      {/* Row header — always visible */}
+      {/* Row */}
       <button
         onClick={onExpand}
-        className="w-full text-left px-4 py-3 hover:bg-zinc-900/40 transition-colors"
+        style={{
+          width: "100%",
+          textAlign: "left",
+          padding: "0.875rem 1.25rem",
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: "0.875rem",
+        }}
       >
-        <div className="flex items-center gap-3">
-          {/* Status dot */}
+        {/* Status */}
+        <div
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: statusColor,
+            flexShrink: 0,
+            animation:
+              execution.status === "pending" ? "pulse 1s infinite" : undefined,
+          }}
+        />
+
+        {/* Input */}
+        <span
+          style={{
+            fontSize: "0.875rem",
+            color: "var(--color-text)",
+            flex: 1,
+            minWidth: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {execution.input}
+        </span>
+
+        {/* Workflow */}
+        <span
+          style={{
+            fontSize: "0.75rem",
+            color: "var(--color-text-muted)",
+            flexShrink: 0,
+            display: "none",
+          }}
+          className="sm-show"
+        >
+          {execution.workflow_name}
+        </span>
+
+        {/* File */}
+        {execution.file_name && (
           <span
-            className={`w-2 h-2 rounded-full shrink-0 ${
-              isSuccess
-                ? "bg-emerald-400"
-                : isFailed
-                  ? "bg-red-500"
-                  : "bg-zinc-500 animate-pulse"
-            }`}
-          />
-
-          {/* Input preview */}
-          <span className="text-xs text-zinc-300 truncate flex-1 min-w-0">
-            {execution.input}
-          </span>
-
-          {/* File indicator */}
-          {execution.file_name && (
-            <span className="text-xs text-zinc-600 shrink-0 hidden sm:block">
-              {execution.file_name}
-            </span>
-          )}
-
-          {/* Workflow name */}
-          <span className="text-xs text-zinc-500 shrink-0 hidden sm:block">
-            {execution.workflow_name}
-          </span>
-
-          {/* Duration */}
-          {duration && (
-            <span className="text-xs text-zinc-600 shrink-0">{duration}</span>
-          )}
-
-          {/* Timestamp */}
-          <span className="text-xs text-zinc-600 shrink-0">
-            {new Date(execution.created_at).toLocaleString()}
-          </span>
-
-          {/* Expand chevron */}
-          <span
-            className={`text-zinc-600 shrink-0 transition-transform text-xs ${
-              isExpanded ? "rotate-180" : ""
-            }`}
+            style={{
+              fontSize: "0.6875rem",
+              color: "var(--color-text-faint)",
+              flexShrink: 0,
+            }}
           >
-            ▼
+            📎
           </span>
-        </div>
+        )}
+
+        {/* Duration */}
+        <span
+          style={{
+            fontSize: "0.75rem",
+            color: "var(--color-text-faint)",
+            flexShrink: 0,
+          }}
+        >
+          {formatDuration(duration)}
+        </span>
+
+        {/* Time ago */}
+        <span
+          style={{
+            fontSize: "0.75rem",
+            color: "var(--color-text-faint)",
+            flexShrink: 0,
+          }}
+        >
+          {formatTimeAgo(execution.created_at)}
+        </span>
+
+        {/* Chevron */}
+        <span
+          style={{
+            fontSize: "0.6875rem",
+            color: "var(--color-text-faint)",
+            flexShrink: 0,
+            transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
+            transition: "transform 0.15s",
+          }}
+        >
+          ▼
+        </span>
       </button>
 
       {/* Expanded detail */}
       {isExpanded && (
-        <div className="border-t border-zinc-800 px-4 py-4 space-y-3 bg-zinc-900/20">
-          {/* Metadata grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div
+          style={{
+            borderTop: "1px solid var(--color-border-subtle)",
+            padding: "1rem 1.25rem",
+            background: "rgba(0,0,0,0.2)",
+          }}
+        >
+          {/* Metadata */}
+          <div
+            style={{
+              display: "flex",
+              gap: "1.5rem",
+              flexWrap: "wrap",
+              marginBottom: "1rem",
+            }}
+          >
             <MetaItem label="Intent" value={execution.intent_key} />
-            <MetaItem label="Status" value={execution.status} />
-            <MetaItem
-              label="Execution ID"
-              value={execution.id.slice(0, 8) + "..."}
-            />
-            {duration && <MetaItem label="Duration" value={duration} />}
+            <MetaItem label="Status">
+              <span
+                className={
+                  execution.status === "success"
+                    ? "badge badge-success"
+                    : execution.status === "failed"
+                      ? "badge badge-error"
+                      : "badge badge-pending"
+                }
+              >
+                {execution.status}
+              </span>
+            </MetaItem>
+            <MetaItem label="ID" value={execution.id.slice(0, 8) + "..."} />
+            {duration !== null && (
+              <MetaItem label="Duration" value={formatDuration(duration)} />
+            )}
           </div>
 
-          {/* File attachment */}
+          {/* File */}
           {execution.file_name && (
-            <div className="flex items-center gap-2 text-xs text-zinc-500 border border-zinc-800 rounded-md px-3 py-2 w-fit">
-              <span className="w-1.5 h-1.5 rounded-full bg-zinc-500" />
-              {execution.file_name}
-              <span className="text-zinc-700">·</span>
-              <span className="text-zinc-700">{execution.file_type}</span>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "0.5rem",
+                padding: "0.375rem 0.75rem",
+                background: "var(--color-surface-2)",
+                borderRadius: 6,
+                marginBottom: "1rem",
+              }}
+            >
+              <span style={{ fontSize: "0.75rem" }}>📎</span>
+              <span
+                style={{
+                  fontSize: "0.75rem",
+                  color: "var(--color-text-muted)",
+                }}
+              >
+                {execution.file_name}
+              </span>
+              {execution.file_type && (
+                <span
+                  style={{
+                    fontSize: "0.6875rem",
+                    color: "var(--color-text-faint)",
+                  }}
+                >
+                  · {execution.file_type.split("/").pop()}
+                </span>
+              )}
             </div>
           )}
 
-          {/* Result / Error detail */}
+          {/* Detail loading */}
           {detailState.phase === "loading" && (
-            <div className="text-xs text-zinc-600 animate-pulse">
+            <p
+              style={{ fontSize: "0.75rem", color: "var(--color-text-faint)" }}
+            >
               Loading detail...
-            </div>
+            </p>
           )}
 
+          {/* Detail content */}
           {detailState.phase === "success" && (
-            <div className="space-y-2">
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "0.75rem",
+              }}
+            >
               {detailState.data.result && (
                 <div>
-                  <p className="text-xs text-zinc-600 mb-1">Result</p>
-                  <pre className="text-xs text-zinc-300 bg-zinc-950 rounded-md p-3 overflow-x-auto max-h-48">
+                  <p
+                    style={{
+                      fontSize: "0.6875rem",
+                      color: "var(--color-text-faint)",
+                      marginBottom: "0.375rem",
+                    }}
+                  >
+                    Result
+                  </p>
+                  <pre
+                    style={{
+                      fontSize: "0.75rem",
+                      color: "var(--color-text-muted)",
+                      background: "var(--color-bg)",
+                      borderRadius: 6,
+                      padding: "0.75rem",
+                      overflow: "auto",
+                      maxHeight: 200,
+                    }}
+                  >
                     {JSON.stringify(detailState.data.result, null, 2)}
                   </pre>
                 </div>
               )}
               {detailState.data.error && (
                 <div>
-                  <p className="text-xs text-zinc-600 mb-1">Error</p>
-                  <p className="text-xs text-red-400 bg-zinc-950 rounded-md p-3">
+                  <p
+                    style={{
+                      fontSize: "0.6875rem",
+                      color: "var(--color-text-faint)",
+                      marginBottom: "0.375rem",
+                    }}
+                  >
+                    Error
+                  </p>
+                  <p style={{ fontSize: "0.8125rem", color: "#fca5a5" }}>
                     {detailState.data.error}
                   </p>
                 </div>
               )}
               {detailState.data.file_url && (
                 <div>
-                  <p className="text-xs text-zinc-600 mb-1">File URL</p>
+                  <p
+                    style={{
+                      fontSize: "0.6875rem",
+                      color: "var(--color-text-faint)",
+                      marginBottom: "0.375rem",
+                    }}
+                  >
+                    File URL
+                  </p>
                   <a
                     href={detailState.data.file_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-xs text-zinc-400 hover:text-zinc-200 underline underline-offset-2 break-all transition-colors"
+                    style={{
+                      fontSize: "0.75rem",
+                      color: "var(--color-text-muted)",
+                      wordBreak: "break-all",
+                    }}
                   >
                     {detailState.data.file_url}
                   </a>
@@ -448,7 +667,9 @@ function ExecutionRow({
           )}
 
           {detailState.phase === "error" && (
-            <p className="text-xs text-red-400">{detailState.message}</p>
+            <p style={{ fontSize: "0.75rem", color: "var(--color-error)" }}>
+              {detailState.message}
+            </p>
           )}
         </div>
       )}
@@ -460,11 +681,37 @@ function ExecutionRow({
 // MetaItem
 // ---------------------------------------------------------------------------
 
-function MetaItem({ label, value }: { label: string; value: string }) {
+function MetaItem({
+  label,
+  value,
+  children,
+}: {
+  label: string;
+  value?: string;
+  children?: React.ReactNode;
+}) {
   return (
-    <div className="space-y-0.5">
-      <p className="text-xs text-zinc-600">{label}</p>
-      <p className="text-xs text-zinc-300 font-medium">{value}</p>
+    <div>
+      <p
+        style={{
+          fontSize: "0.6875rem",
+          color: "var(--color-text-faint)",
+          marginBottom: 2,
+        }}
+      >
+        {label}
+      </p>
+      {children ?? (
+        <p
+          style={{
+            fontSize: "0.8125rem",
+            fontWeight: 500,
+            color: "var(--color-text-muted)",
+          }}
+        >
+          {value}
+        </p>
+      )}
     </div>
   );
 }

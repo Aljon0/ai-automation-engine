@@ -3,24 +3,20 @@
 /**
  * app/page.tsx
  *
- * Phase 7 update — Live Updates via SSE
- *
- * Changes:
- * - Loading state replaced with live pipeline visualization
- * - Each step lights up as SSE events arrive
- * - submitTask now opens SSE stream immediately after getting execution_id
+ * Phase 10 — Redesigned Task Form
+ * Professional UI with Inter font and design system classes.
  */
 
-import { useState, useEffect, useRef } from "react";
 import {
-  submitTask,
   fetchWorkflows,
-  uploadFile,
   streamExecution,
+  submitTask,
   TaskResponse,
-  WorkflowSummary,
+  uploadFile,
   UploadResponse,
+  WorkflowSummary,
 } from "@/lib/api";
+import { useEffect, useRef, useState } from "react";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -42,7 +38,12 @@ type UploadState =
 
 type SubmitState =
   | { phase: "idle" }
-  | { phase: "streaming"; executionId: string; step: PipelineStep; workflowName?: string }
+  | {
+      phase: "streaming";
+      executionId: string;
+      step: PipelineStep;
+      workflowName?: string;
+    }
   | { phase: "success"; data: TaskResponse }
   | { phase: "error"; message: string };
 
@@ -68,19 +69,27 @@ const ALLOWED_TYPES = [
   "application/msword",
 ];
 
-// ---------------------------------------------------------------------------
-// Pipeline steps config
-// ---------------------------------------------------------------------------
-
 const PIPELINE_STEPS: {
   key: PipelineStep;
   label: string;
   description: string;
 }[] = [
-  { key: "intent_detected",   label: "Intent Detected",   description: "AI classified your request" },
-  { key: "workflow_selected", label: "Workflow Selected",  description: "Matched to automation" },
-  { key: "n8n_triggered",     label: "n8n Triggered",      description: "Automation engine running" },
-  { key: "completed",         label: "Completed",          description: "Result ready" },
+  {
+    key: "intent_detected",
+    label: "Intent Detected",
+    description: "AI classified your request",
+  },
+  {
+    key: "workflow_selected",
+    label: "Workflow Selected",
+    description: "Matched to automation",
+  },
+  {
+    key: "n8n_triggered",
+    label: "Running",
+    description: "Automation engine executing",
+  },
+  { key: "completed", label: "Completed", description: "Result ready" },
 ];
 
 const STEP_ORDER: PipelineStep[] = [
@@ -93,13 +102,13 @@ const STEP_ORDER: PipelineStep[] = [
 function getStepState(
   step: PipelineStep,
   currentStep: PipelineStep,
-  isFailed: boolean
-): "done" | "active" | "pending" | "failed" {
+  isFailed: boolean,
+) {
   if (isFailed && step === currentStep) return "failed";
-  const currentIdx = STEP_ORDER.indexOf(currentStep);
-  const stepIdx = STEP_ORDER.indexOf(step);
-  if (stepIdx < currentIdx) return "done";
-  if (stepIdx === currentIdx) return "active";
+  const curr = STEP_ORDER.indexOf(currentStep);
+  const idx = STEP_ORDER.indexOf(step);
+  if (idx < curr) return "done";
+  if (idx === curr) return "active";
   return "pending";
 }
 
@@ -109,20 +118,29 @@ function getStepState(
 
 export default function HomePage() {
   const [input, setInput] = useState("");
-  const [submitState, setSubmitState] = useState<SubmitState>({ phase: "idle" });
-  const [uploadState, setUploadState] = useState<UploadState>({ phase: "idle" });
-  const [workflowsState, setWorkflowsState] = useState<WorkflowsState>({ phase: "loading" });
+  const [submitState, setSubmitState] = useState<SubmitState>({
+    phase: "idle",
+  });
+  const [uploadState, setUploadState] = useState<UploadState>({
+    phase: "idle",
+  });
+  const [workflowsState, setWorkflowsState] = useState<WorkflowsState>({
+    phase: "loading",
+  });
   const streamCleanupRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     fetchWorkflows()
-      .then(({ workflows }) => setWorkflowsState({ phase: "success", workflows }))
+      .then(({ workflows }) =>
+        setWorkflowsState({ phase: "success", workflows }),
+      )
       .catch(() => setWorkflowsState({ phase: "error" }));
   }, []);
 
-  // Cleanup stream on unmount
   useEffect(() => {
-    return () => { streamCleanupRef.current?.(); };
+    return () => {
+      streamCleanupRef.current?.();
+    };
   }, []);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -130,18 +148,13 @@ export default function HomePage() {
     if (!input.trim()) return;
 
     try {
-      const attachedFile = uploadState.phase === "done" ? uploadState.file : undefined;
-
-      // Submit task — get execution_id immediately
+      const attachedFile =
+        uploadState.phase === "done" ? uploadState.file : undefined;
       const taskPromise = submitTask(input.trim(), attachedFile);
-
-      // Start streaming while task executes
       setSubmitState({ phase: "streaming", executionId: "", step: "idle" });
-
       const taskResult = await taskPromise;
       const executionId = taskResult.execution_id;
 
-      // Update state with execution ID
       setSubmitState({
         phase: "streaming",
         executionId,
@@ -149,45 +162,29 @@ export default function HomePage() {
         workflowName: taskResult.workflow_name,
       });
 
-      // Open SSE stream
       const cleanup = streamExecution(executionId, {
-        onIntent: () => {
-          setSubmitState(prev =>
-            prev.phase === "streaming"
-              ? { ...prev, step: "intent_detected" }
-              : prev
-          );
-        },
-        onWorkflowSelected: () => {
-          setSubmitState(prev =>
-            prev.phase === "streaming"
-              ? { ...prev, step: "workflow_selected" }
-              : prev
-          );
-        },
-        onN8nTriggered: () => {
-          setSubmitState(prev =>
-            prev.phase === "streaming"
-              ? { ...prev, step: "n8n_triggered" }
-              : prev
-          );
-        },
-        onCompleted: () => {
-          setSubmitState({ phase: "success", data: taskResult });
-        },
-        onFailed: () => {
-          setSubmitState({ phase: "success", data: taskResult });
-        },
-        onError: () => {
-          setSubmitState({ phase: "success", data: taskResult });
-        },
+        onIntent: () =>
+          setSubmitState((p) =>
+            p.phase === "streaming" ? { ...p, step: "intent_detected" } : p,
+          ),
+        onWorkflowSelected: () =>
+          setSubmitState((p) =>
+            p.phase === "streaming" ? { ...p, step: "workflow_selected" } : p,
+          ),
+        onN8nTriggered: () =>
+          setSubmitState((p) =>
+            p.phase === "streaming" ? { ...p, step: "n8n_triggered" } : p,
+          ),
+        onCompleted: () =>
+          setSubmitState({ phase: "success", data: taskResult }),
+        onFailed: () => setSubmitState({ phase: "success", data: taskResult }),
+        onError: () => setSubmitState({ phase: "success", data: taskResult }),
       });
-
       streamCleanupRef.current = cleanup;
     } catch (err) {
       setSubmitState({
         phase: "error",
-        message: err instanceof Error ? err.message : "Unknown error occurred.",
+        message: err instanceof Error ? err.message : "Unknown error",
       });
     }
   }
@@ -214,8 +211,7 @@ export default function HomePage() {
   }
 
   function handleWorkflowClick(workflow: WorkflowSummary) {
-    const prompt = INTENT_PROMPTS[workflow.intent_key] ?? workflow.workflow_name;
-    setInput(prompt);
+    setInput(INTENT_PROMPTS[workflow.intent_key] ?? workflow.workflow_name);
     setSubmitState({ phase: "idle" });
   }
 
@@ -223,176 +219,289 @@ export default function HomePage() {
   const isUploading = uploadState.phase === "uploading";
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-100 font-mono flex flex-col items-center justify-center px-4 py-16 pt-24">
-
+    <div className="page-container-narrow">
       {/* Header */}
-      <div className="mb-10 text-center">
-        <p className="text-xs tracking-[0.3em] text-zinc-500 uppercase mb-3">
-          AI Workflow Automation Engine
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
+      <div style={{ marginBottom: "2rem" }}>
+        <h1
+          style={{
+            fontSize: "1.5rem",
+            fontWeight: 700,
+            marginBottom: "0.5rem",
+          }}
+        >
           Automate a Task
         </h1>
-        <p className="text-sm text-zinc-500 mt-2">
+        <p style={{ fontSize: "0.875rem", color: "var(--color-text-muted)" }}>
           Describe what you want to do in plain language.
         </p>
       </div>
-        <p className="text-xs tracking-[0.3em] text-zinc-500 uppercase mb-3">
-          AI Workflow Automation Engine
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-100">
-          Automate a Task
-        </h1>
-        <p className="text-sm text-zinc-500 mt-2">
-          Describe what you want to do in plain language.
-        </p>
 
-      <div className="w-full max-w-lg space-y-4">
+      {/* Task Form */}
+      <form onSubmit={handleSubmit} style={{ marginBottom: "1.5rem" }}>
+        <div
+          className="card"
+          style={{
+            borderColor: isSubmitting ? "var(--color-border)" : undefined,
+            transition: "border-color 0.15s",
+          }}
+        >
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="e.g. Analyze my CSV file, Summarize this document, Send an email..."
+            rows={4}
+            disabled={isSubmitting}
+            style={{
+              width: "100%",
+              background: "transparent",
+              border: "none",
+              outline: "none",
+              padding: "1rem 1.25rem",
+              fontSize: "0.9375rem",
+              color: "var(--color-text)",
+              fontFamily: "inherit",
+              resize: "none",
+              lineHeight: 1.6,
+              opacity: isSubmitting ? 0.5 : 1,
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey))
+                handleSubmit(e as unknown as React.FormEvent);
+            }}
+          />
 
-        {/* Task Form */}
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <div className="border border-zinc-800 rounded-lg overflow-hidden focus-within:border-zinc-600 transition-colors">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="e.g. Analyze my CSV, Summarize this document, Send an email..."
-              rows={3}
+          <div
+            style={{
+              padding: "0.75rem 1.25rem",
+              borderTop: "1px solid var(--color-border-subtle)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "1rem",
+            }}
+          >
+            {/* File upload trigger */}
+            <FileUpload
+              uploadState={uploadState}
+              onFileSelect={handleFileSelect}
+              onClear={() => setUploadState({ phase: "idle" })}
               disabled={isSubmitting}
-              className="w-full bg-transparent px-4 py-3 text-sm text-zinc-100 placeholder-zinc-600 resize-none focus:outline-none disabled:opacity-50"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                  handleSubmit(e as unknown as React.FormEvent);
-                }
-              }}
+              inline
             />
-            <div className="px-4 py-2 border-t border-zinc-800 flex items-center justify-between">
-              <span className="text-xs text-zinc-600">Cmd + Enter to submit</span>
+
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.75rem",
+                flexShrink: 0,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "0.6875rem",
+                  color: "var(--color-text-faint)",
+                }}
+              >
+                ⌘ Enter
+              </span>
               <button
                 type="submit"
                 disabled={isSubmitting || isUploading || !input.trim()}
-                className="text-xs px-3 py-1.5 rounded-md bg-zinc-100 text-zinc-900 font-medium
-                           hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                className="btn-primary"
               >
                 {isSubmitting ? "Running..." : "Run Workflow"}
               </button>
             </div>
           </div>
+        </div>
+      </form>
 
-          {/* File Upload */}
-          <FileUpload
-            uploadState={uploadState}
-            onFileSelect={handleFileSelect}
-            onClear={() => setUploadState({ phase: "idle" })}
-            disabled={isSubmitting}
-          />
-        </form>
+      {/* Pipeline */}
+      {submitState.phase === "streaming" && (
+        <div className="card" style={{ marginBottom: "1.5rem" }}>
+          <div className="card-header">
+            <span className="section-label">Executing</span>
+            {submitState.workflowName && (
+              <span
+                style={{
+                  fontSize: "0.75rem",
+                  color: "var(--color-text-muted)",
+                }}
+              >
+                {submitState.workflowName}
+              </span>
+            )}
+          </div>
+          <div
+            style={{
+              padding: "1rem 1.25rem",
+              display: "flex",
+              flexDirection: "column",
+              gap: "1rem",
+            }}
+          >
+            {PIPELINE_STEPS.map((pStep) => {
+              const state = getStepState(pStep.key, submitState.step, false);
+              return (
+                <div
+                  key={pStep.key}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.875rem",
+                  }}
+                >
+                  <StepIndicator state={state} />
+                  <div>
+                    <p
+                      style={{
+                        fontSize: "0.8125rem",
+                        fontWeight: 500,
+                        color:
+                          state === "done"
+                            ? "var(--color-success)"
+                            : state === "active"
+                              ? "var(--color-text)"
+                              : "var(--color-text-faint)",
+                      }}
+                    >
+                      {pStep.label}
+                    </p>
+                    <p
+                      style={{
+                        fontSize: "0.6875rem",
+                        color: "var(--color-text-faint)",
+                      }}
+                    >
+                      {pStep.description}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
-        {/* Live Pipeline */}
-        {submitState.phase === "streaming" && (
-          <LivePipeline
-            step={submitState.step}
-            workflowName={submitState.workflowName}
-            failed={false}
-          />
-        )}
+      {/* Result */}
+      {submitState.phase === "success" && (
+        <ResultCard data={submitState.data} onReset={handleReset} />
+      )}
 
-        {/* Result Card */}
-        {submitState.phase === "success" && (
-          <ResultCard data={submitState.data} onReset={handleReset} />
-        )}
-
-        {/* Error */}
-        {submitState.phase === "error" && (
-          <div className="border border-red-800 rounded-lg bg-red-950/40 px-4 py-3 space-y-2">
-            <p className="text-xs font-medium text-red-400">Request Failed</p>
-            <p className="text-xs text-red-300">{submitState.message}</p>
-            <button onClick={handleReset} className="text-xs text-zinc-400 hover:text-zinc-200 transition-colors">
-              Try again
+      {/* Error */}
+      {submitState.phase === "error" && (
+        <div
+          className="card"
+          style={{ borderColor: "var(--color-error)", marginBottom: "1.5rem" }}
+        >
+          <div style={{ padding: "1rem 1.25rem" }}>
+            <p
+              style={{
+                fontSize: "0.8125rem",
+                fontWeight: 600,
+                color: "var(--color-error)",
+                marginBottom: "0.25rem",
+              }}
+            >
+              Request Failed
+            </p>
+            <p style={{ fontSize: "0.8125rem", color: "#fca5a5" }}>
+              {submitState.message}
+            </p>
+            <button
+              onClick={handleReset}
+              style={{
+                marginTop: "0.75rem",
+                fontSize: "0.75rem",
+                color: "var(--color-text-muted)",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: 0,
+              }}
+            >
+              Try again →
             </button>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Available Workflows */}
-        {submitState.phase !== "streaming" && (
-          <WorkflowRegistry state={workflowsState} onSelect={handleWorkflowClick} />
-        )}
-      </div>
-    </main>
+      {/* Available Workflows */}
+      {submitState.phase !== "streaming" && (
+        <WorkflowRegistry
+          state={workflowsState}
+          onSelect={handleWorkflowClick}
+        />
+      )}
+    </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// LivePipeline
+// StepIndicator
 // ---------------------------------------------------------------------------
 
-function LivePipeline({
-  step,
-  workflowName,
-  failed,
+function StepIndicator({
+  state,
 }: {
-  step: PipelineStep;
-  workflowName?: string;
-  failed: boolean;
+  state: "done" | "active" | "pending" | "failed";
 }) {
+  const base: React.CSSProperties = {
+    width: 20,
+    height: 20,
+    borderRadius: "50%",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    fontSize: "0.6875rem",
+    fontWeight: 700,
+  };
+
+  if (state === "done")
+    return (
+      <div
+        style={{ ...base, background: "var(--color-success)", color: "#fff" }}
+      >
+        ✓
+      </div>
+    );
+  if (state === "active")
+    return (
+      <div
+        style={{
+          ...base,
+          background: "var(--color-surface-2)",
+          border: "2px solid var(--color-border)",
+        }}
+      >
+        <div
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            background: "var(--color-text)",
+            animation: "pulse 1s infinite",
+          }}
+        />
+      </div>
+    );
+  if (state === "failed")
+    return (
+      <div
+        style={{
+          ...base,
+          background: "var(--color-error-bg)",
+          border: "1px solid var(--color-error)",
+          color: "var(--color-error)",
+        }}
+      >
+        ✕
+      </div>
+    );
   return (
-    <div className="border border-zinc-800 rounded-lg overflow-hidden">
-      <div className="px-4 py-3 border-b border-zinc-800 flex items-center justify-between">
-        <span className="text-xs text-zinc-500 tracking-widest uppercase">
-          Running
-        </span>
-        {workflowName && (
-          <span className="text-xs text-zinc-400">{workflowName}</span>
-        )}
-      </div>
-      <div className="px-4 py-4 space-y-3">
-        {PIPELINE_STEPS.map((pStep, idx) => {
-          const state = getStepState(pStep.key, step, failed);
-          return (
-            <div key={pStep.key} className="flex items-center gap-3">
-              {/* Step indicator */}
-              <div className="shrink-0 w-5 h-5 rounded-full border flex items-center justify-center">
-                {state === "done" && (
-                  <div className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center border-0">
-                    <span className="text-[9px] text-white font-bold">✓</span>
-                  </div>
-                )}
-                {state === "active" && (
-                  <div className="w-5 h-5 rounded-full bg-zinc-700 border border-zinc-500 flex items-center justify-center animate-pulse">
-                    <div className="w-2 h-2 rounded-full bg-zinc-300" />
-                  </div>
-                )}
-                {state === "failed" && (
-                  <div className="w-5 h-5 rounded-full bg-red-900 border border-red-700 flex items-center justify-center">
-                    <span className="text-[9px] text-red-400 font-bold">✕</span>
-                  </div>
-                )}
-                {state === "pending" && (
-                  <div className="w-5 h-5 rounded-full border border-zinc-700" />
-                )}
-              </div>
-
-              {/* Step text */}
-              <div className="flex-1 min-w-0">
-                <p className={`text-xs font-medium ${
-                  state === "done" ? "text-emerald-400" :
-                  state === "active" ? "text-zinc-200" :
-                  state === "failed" ? "text-red-400" :
-                  "text-zinc-600"
-                }`}>
-                  {pStep.label}
-                </p>
-                <p className="text-xs text-zinc-600">{pStep.description}</p>
-              </div>
-
-              {/* Connector line */}
-              {idx < PIPELINE_STEPS.length - 1 && (
-                <div className="absolute left-9 mt-8 w-px h-3 bg-zinc-800" />
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    <div style={{ ...base, border: "1px solid var(--color-border-subtle)" }} />
   );
 }
 
@@ -405,9 +514,16 @@ interface FileUploadProps {
   onFileSelect: (file: File) => void;
   onClear: () => void;
   disabled: boolean;
+  inline?: boolean;
 }
 
-function FileUpload({ uploadState, onFileSelect, onClear, disabled }: FileUploadProps) {
+function FileUpload({
+  uploadState,
+  onFileSelect,
+  onClear,
+  disabled,
+  inline,
+}: FileUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -425,106 +541,308 @@ function FileUpload({ uploadState, onFileSelect, onClear, disabled }: FileUpload
     e.target.value = "";
   }
 
-  if (uploadState.phase === "idle" || uploadState.phase === "error") {
+  if (uploadState.phase === "done") {
     return (
-      <div className="space-y-1.5">
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "0.5rem",
+          minWidth: 0,
+        }}
+      >
         <div
-          onClick={() => !disabled && inputRef.current?.click()}
-          onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-          onDragLeave={() => setIsDragging(false)}
-          onDrop={handleDrop}
-          className={`border border-dashed rounded-lg px-4 py-4 text-center cursor-pointer transition-colors ${
-            isDragging ? "border-zinc-500 bg-zinc-900/60" : "border-zinc-800 hover:border-zinc-600"
-          } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            background: "var(--color-success)",
+            flexShrink: 0,
+          }}
+        />
+        <span
+          style={{
+            fontSize: "0.75rem",
+            color: "var(--color-text-muted)",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
         >
-          <p className="text-xs text-zinc-500">
-            Attach a file{" "}
-            <span className="text-zinc-400 underline underline-offset-2">browse</span>
-          </p>
-          <p className="text-xs text-zinc-700 mt-1">CSV · PDF · DOCX — max 10MB</p>
-        </div>
-        {uploadState.phase === "error" && (
-          <p className="text-xs text-red-400 px-1">{uploadState.message}</p>
-        )}
-        <input ref={inputRef} type="file" accept={ALLOWED_EXTENSIONS} onChange={handleChange} className="hidden" />
+          {uploadState.file.file_name}
+        </span>
+        <button
+          type="button"
+          onClick={onClear}
+          disabled={disabled}
+          style={{
+            fontSize: "0.6875rem",
+            color: "var(--color-text-faint)",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            flexShrink: 0,
+            padding: 0,
+          }}
+        >
+          ✕
+        </button>
       </div>
     );
   }
 
   if (uploadState.phase === "uploading") {
     return (
-      <div className="border border-zinc-800 rounded-lg px-4 py-3 flex items-center gap-3">
-        <span className="w-2 h-2 rounded-full bg-zinc-500 animate-pulse shrink-0" />
-        <span className="text-xs text-zinc-500">Uploading file...</span>
-      </div>
+      <span style={{ fontSize: "0.75rem", color: "var(--color-text-muted)" }}>
+        Uploading...
+      </span>
+    );
+  }
+
+  if (inline) {
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => !disabled && inputRef.current?.click()}
+          disabled={disabled}
+          style={{
+            fontSize: "0.75rem",
+            color: "var(--color-text-subtle)",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: 0,
+            display: "flex",
+            alignItems: "center",
+            gap: "0.375rem",
+          }}
+        >
+          <span style={{ fontSize: "1rem" }}>📎</span>
+          Attach file
+        </button>
+        <input
+          ref={inputRef}
+          type="file"
+          accept={ALLOWED_EXTENSIONS}
+          onChange={handleChange}
+          style={{ display: "none" }}
+        />
+      </>
     );
   }
 
   return (
-    <div className="border border-zinc-700 rounded-lg px-4 py-3 flex items-center justify-between gap-3">
-      <div className="flex items-center gap-2 min-w-0">
-        <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-        <div className="min-w-0">
-          <p className="text-xs text-zinc-300 truncate">{uploadState.file.file_name}</p>
-          <p className="text-xs text-zinc-600">{(uploadState.file.file_size / 1024).toFixed(1)}KB · ready</p>
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={onClear}
-        disabled={disabled}
-        className="text-xs text-zinc-600 hover:text-zinc-400 shrink-0 transition-colors disabled:opacity-30"
+    <div>
+      <div
+        onClick={() => !disabled && inputRef.current?.click()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={handleDrop}
+        style={{
+          border: `1px dashed ${isDragging ? "var(--color-border)" : "var(--color-border-subtle)"}`,
+          borderRadius: 8,
+          padding: "1rem",
+          textAlign: "center",
+          cursor: disabled ? "not-allowed" : "pointer",
+          background: isDragging ? "var(--color-surface)" : "transparent",
+          opacity: disabled ? 0.4 : 1,
+          transition: "all 0.15s",
+        }}
       >
-        Remove
-      </button>
+        <p style={{ fontSize: "0.8125rem", color: "var(--color-text-muted)" }}>
+          Drop a file or{" "}
+          <span
+            style={{ color: "var(--color-text)", textDecoration: "underline" }}
+          >
+            browse
+          </span>
+        </p>
+        <p
+          style={{
+            fontSize: "0.6875rem",
+            color: "var(--color-text-faint)",
+            marginTop: 4,
+          }}
+        >
+          CSV · PDF · DOCX — max 10MB
+        </p>
+      </div>
+      {uploadState.phase === "error" && (
+        <p
+          style={{
+            fontSize: "0.75rem",
+            color: "var(--color-error)",
+            marginTop: "0.5rem",
+          }}
+        >
+          {uploadState.message}
+        </p>
+      )}
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ALLOWED_EXTENSIONS}
+        onChange={handleChange}
+        style={{ display: "none" }}
+      />
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// WorkflowRegistry + WorkflowCard
+// WorkflowRegistry
 // ---------------------------------------------------------------------------
 
-function WorkflowRegistry({ state, onSelect }: { state: WorkflowsState; onSelect: (w: WorkflowSummary) => void }) {
+function WorkflowRegistry({
+  state,
+  onSelect,
+}: {
+  state: WorkflowsState;
+  onSelect: (w: WorkflowSummary) => void;
+}) {
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs tracking-widest text-zinc-600 uppercase">Available Workflows</p>
+    <div>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: "0.75rem",
+        }}
+      >
+        <span className="section-label">Available Workflows</span>
         {state.phase === "success" && (
-          <span className="text-xs text-zinc-600">{state.workflows.length} active</span>
+          <span
+            style={{ fontSize: "0.6875rem", color: "var(--color-text-faint)" }}
+          >
+            {state.workflows.length} active
+          </span>
         )}
       </div>
+
       {state.phase === "loading" && (
-        <div className="space-y-2">
-          {[1, 2].map((i) => (
-            <div key={i} className="h-16 rounded-lg border border-zinc-800 bg-zinc-900/40 animate-pulse" />
+        <div
+          style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}
+        >
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              style={{
+                height: 64,
+                borderRadius: 8,
+                background: "var(--color-surface)",
+                animation: "pulse 1.5s infinite",
+              }}
+            />
           ))}
         </div>
       )}
+
       {state.phase === "error" && (
-        <p className="text-xs text-zinc-600 py-2">Could not load workflows — is the backend running?</p>
+        <p style={{ fontSize: "0.8125rem", color: "var(--color-text-faint)" }}>
+          Could not load workflows.
+        </p>
       )}
+
       {state.phase === "success" && state.workflows.length === 0 && (
-        <p className="text-xs text-zinc-600 py-2">No active workflows found.</p>
+        <p style={{ fontSize: "0.8125rem", color: "var(--color-text-faint)" }}>
+          No active workflows found.
+        </p>
       )}
-      {state.phase === "success" && state.workflows.length > 0 && (
-        <div className="space-y-2">
-          {state.workflows.map((workflow) => (
+
+      {state.phase === "success" && (
+        <div
+          style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}
+        >
+          {state.workflows.map((wf) => (
             <button
-              key={workflow.id}
-              onClick={() => onSelect(workflow)}
-              className="w-full text-left border border-zinc-800 rounded-lg px-4 py-3 hover:border-zinc-600 hover:bg-zinc-900/60 transition-all group"
+              key={wf.id}
+              onClick={() => onSelect(wf)}
+              style={{
+                width: "100%",
+                textAlign: "left",
+                background: "var(--color-surface)",
+                border: "1px solid var(--color-border-subtle)",
+                borderRadius: 8,
+                padding: "0.875rem 1rem",
+                cursor: "pointer",
+                transition: "border-color 0.15s, background 0.15s",
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.borderColor =
+                  "var(--color-border)";
+                (e.currentTarget as HTMLButtonElement).style.background =
+                  "var(--color-surface-2)";
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLButtonElement).style.borderColor =
+                  "var(--color-border-subtle)";
+                (e.currentTarget as HTMLButtonElement).style.background =
+                  "var(--color-surface)";
+              }}
             >
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5 min-w-0">
-                  <p className="text-xs font-medium text-zinc-300 group-hover:text-zinc-100 transition-colors">
-                    {workflow.workflow_name}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: "1rem",
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <p
+                    style={{
+                      fontSize: "0.875rem",
+                      fontWeight: 500,
+                      color: "var(--color-text)",
+                      marginBottom: 2,
+                    }}
+                  >
+                    {wf.workflow_name}
                   </p>
-                  <p className="text-xs text-zinc-600 truncate">{workflow.description}</p>
+                  <p
+                    style={{
+                      fontSize: "0.75rem",
+                      color: "var(--color-text-muted)",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {wf.description}
+                  </p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0 ml-3">
-                  <span className="text-xs text-zinc-600 font-mono">{workflow.intent_key}</span>
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                    flexShrink: 0,
+                  }}
+                >
+                  <code
+                    style={{
+                      fontSize: "0.6875rem",
+                      color: "var(--color-text-faint)",
+                      background: "var(--color-bg)",
+                      padding: "0.125rem 0.375rem",
+                      borderRadius: 4,
+                    }}
+                  >
+                    {wf.intent_key}
+                  </code>
+                  <div
+                    style={{
+                      width: 6,
+                      height: 6,
+                      borderRadius: "50%",
+                      background: "var(--color-success)",
+                    }}
+                  />
                 </div>
               </div>
             </button>
@@ -539,48 +857,263 @@ function WorkflowRegistry({ state, onSelect }: { state: WorkflowsState; onSelect
 // ResultCard
 // ---------------------------------------------------------------------------
 
-function ResultCard({ data, onReset }: { data: TaskResponse; onReset: () => void }) {
+function ResultCard({
+  data,
+  onReset,
+}: {
+  data: TaskResponse;
+  onReset: () => void;
+}) {
   const isSuccess = data.status === "success";
+  const [expanded, setExpanded] = useState(true);
+
   return (
-    <div className={`border rounded-lg overflow-hidden ${isSuccess ? "border-zinc-700" : "border-red-800"}`}>
-      <div className={`px-4 py-3 border-b flex items-center justify-between ${
-        isSuccess ? "border-zinc-800 bg-zinc-900/60" : "border-red-900 bg-red-950/40"
-      }`}>
-        <div className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full shrink-0 ${isSuccess ? "bg-emerald-400" : "bg-red-500"}`} />
-          <span className="text-xs font-medium text-zinc-200">{data.workflow_name}</span>
+    <div
+      className="card"
+      style={{
+        marginBottom: "1.5rem",
+        borderColor: isSuccess
+          ? "var(--color-border-subtle)"
+          : "var(--color-error)",
+      }}
+    >
+      {/* Header */}
+      <div className="card-header">
+        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+          <div
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background: isSuccess
+                ? "var(--color-success)"
+                : "var(--color-error)",
+              flexShrink: 0,
+            }}
+          />
+          <span
+            style={{
+              fontSize: "0.875rem",
+              fontWeight: 600,
+              color: "var(--color-text)",
+            }}
+          >
+            {data.workflow_name}
+          </span>
+          <span
+            className={isSuccess ? "badge badge-success" : "badge badge-error"}
+          >
+            {data.status}
+          </span>
         </div>
-        <span className={`text-xs px-2 py-0.5 rounded-full border ${
-          isSuccess ? "bg-emerald-950 text-emerald-400 border-emerald-800" : "bg-red-950 text-red-400 border-red-800"
-        }`}>
-          {data.status}
-        </span>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          style={{
+            fontSize: "0.75rem",
+            color: "var(--color-text-faint)",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          {expanded ? "Collapse" : "Expand"}
+        </button>
       </div>
-      <div className="px-4 py-3 border-b border-zinc-800/60 flex items-center gap-4 flex-wrap">
+
+      {/* Meta */}
+      <div
+        style={{
+          padding: "0.75rem 1.25rem",
+          borderBottom: "1px solid var(--color-border-subtle)",
+          display: "flex",
+          gap: "1.5rem",
+          flexWrap: "wrap",
+        }}
+      >
         <MetaItem label="Intent" value={data.intent_key} />
-        <MetaItem label="Execution ID" value={data.execution_id.slice(0, 8) + "..."} />
+        <MetaItem
+          label="Execution ID"
+          value={data.execution_id.slice(0, 8) + "..."}
+        />
         {data.file_name && <MetaItem label="File" value={data.file_name} />}
       </div>
-      <div className="px-4 py-3">
-        {isSuccess && data.result ? (
-          <div className="space-y-1">
-            <p className="text-xs text-zinc-500 mb-2">Result</p>
-            <pre className="text-xs text-zinc-300 bg-zinc-900 rounded-md p-3 overflow-x-auto">
-              {JSON.stringify(data.result, null, 2)}
-            </pre>
-          </div>
-        ) : (
-          <div className="space-y-1">
-            <p className="text-xs text-zinc-500 mb-1">Error</p>
-            <p className="text-xs text-red-300">{data.error}</p>
+
+      {/* Result body */}
+      {expanded && (
+        <div style={{ padding: "1rem 1.25rem" }}>
+          {isSuccess && data.result ? (
+            <ResultDisplay result={data.result} />
+          ) : (
+            <div>
+              <p
+                style={{
+                  fontSize: "0.75rem",
+                  color: "var(--color-text-faint)",
+                  marginBottom: "0.5rem",
+                }}
+              >
+                Error
+              </p>
+              <p style={{ fontSize: "0.875rem", color: "#fca5a5" }}>
+                {data.error}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Footer */}
+      <div
+        style={{
+          padding: "0.625rem 1.25rem",
+          borderTop: "1px solid var(--color-border-subtle)",
+        }}
+      >
+        <button
+          onClick={onReset}
+          style={{
+            fontSize: "0.75rem",
+            color: "var(--color-text-faint)",
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            padding: 0,
+          }}
+        >
+          ← Run another task
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ResultDisplay — smart result renderer
+// ---------------------------------------------------------------------------
+
+function ResultDisplay({ result }: { result: Record<string, unknown> }) {
+  // Check for known result shapes
+  const analysis = result.analysis as string | undefined;
+  const summary = result.summary as string | undefined;
+  const message = result.message as string | undefined;
+  const sent = result.sent as boolean | undefined;
+
+  // Email result
+  if (sent !== undefined) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <span style={{ fontSize: "1.25rem" }}>✉️</span>
+          <span
+            style={{
+              fontSize: "0.875rem",
+              fontWeight: 500,
+              color: "var(--color-success)",
+            }}
+          >
+            Email sent successfully
+          </span>
+        </div>
+        <div
+          style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}
+        >
+          <MetaItem label="To" value={String(result.to ?? "")} />
+          <MetaItem label="Subject" value={String(result.subject ?? "")} />
+        </div>
+
+        {Boolean(result.body) && (
+          <div>
+            <p
+              style={{
+                fontSize: "0.6875rem",
+                color: "var(--color-text-faint)",
+                marginBottom: "0.375rem",
+              }}
+            >
+              Body
+            </p>
+            <p
+              style={{
+                fontSize: "0.8125rem",
+                color: "var(--color-text-muted)",
+                lineHeight: 1.6,
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {String(result.body)}
+            </p>
           </div>
         )}
       </div>
-      <div className="px-4 py-2 border-t border-zinc-800/60">
-        <button onClick={onReset} className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
-          Run another task
-        </button>
+    );
+  }
+
+  // AI text result (analysis or summary)
+  const textContent = analysis ?? summary ?? message;
+  if (textContent) {
+    return (
+      <div>
+        <p
+          style={{
+            fontSize: "0.6875rem",
+            color: "var(--color-text-faint)",
+            marginBottom: "0.5rem",
+          }}
+        >
+          Result
+        </p>
+        <div
+          style={{
+            fontSize: "0.875rem",
+            color: "var(--color-text-muted)",
+            lineHeight: 1.7,
+            whiteSpace: "pre-wrap",
+            maxHeight: 400,
+            overflowY: "auto",
+          }}
+        >
+          {textContent
+            .replace(/\*\*(.*?)\*\*/g, "$1") // strip markdown bold
+            .replace(/\n\n/g, "\n")}
+        </div>
+
+        {Boolean(result.row_count) && (
+          <div style={{ marginTop: "0.75rem", display: "flex", gap: "1rem" }}>
+            <MetaItem label="Rows" value={String(result.row_count)} />
+            {Boolean(result.col_count) && (
+              <MetaItem label="Columns" value={String(result.col_count)} />
+            )}
+          </div>
+        )}
       </div>
+    );
+  }
+
+  // Raw JSON fallback
+  return (
+    <div>
+      <p
+        style={{
+          fontSize: "0.6875rem",
+          color: "var(--color-text-faint)",
+          marginBottom: "0.5rem",
+        }}
+      >
+        Raw Result
+      </p>
+      <pre
+        style={{
+          fontSize: "0.75rem",
+          color: "var(--color-text-muted)",
+          background: "var(--color-bg)",
+          borderRadius: 6,
+          padding: "0.75rem",
+          overflow: "auto",
+          maxHeight: 300,
+        }}
+      >
+        {JSON.stringify(result, null, 2)}
+      </pre>
     </div>
   );
 }
@@ -591,9 +1124,25 @@ function ResultCard({ data, onReset }: { data: TaskResponse; onReset: () => void
 
 function MetaItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="space-y-0.5">
-      <p className="text-xs text-zinc-600">{label}</p>
-      <p className="text-xs text-zinc-300 font-medium">{value}</p>
+    <div>
+      <p
+        style={{
+          fontSize: "0.6875rem",
+          color: "var(--color-text-faint)",
+          marginBottom: 2,
+        }}
+      >
+        {label}
+      </p>
+      <p
+        style={{
+          fontSize: "0.8125rem",
+          fontWeight: 500,
+          color: "var(--color-text-muted)",
+        }}
+      >
+        {value}
+      </p>
     </div>
   );
 }

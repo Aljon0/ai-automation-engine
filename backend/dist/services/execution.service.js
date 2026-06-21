@@ -23,7 +23,7 @@ const supabase_1 = require("../lib/supabase");
  * @param options.offset - Rows to skip for pagination (default 0)
  * @param options.status - Optional filter by status
  */
-async function listExecutions(options = {}) {
+async function listExecutions(options = {}, userId) {
     const { limit = 50, offset = 0, status } = options;
     const supabase = (0, supabase_1.getSupabaseClient)();
     let query = supabase
@@ -46,6 +46,9 @@ async function listExecutions(options = {}) {
         .range(offset, offset + limit - 1);
     if (status) {
         query = query.eq("status", status);
+    }
+    if (userId) {
+        query = query.eq("user_id", userId);
     }
     const { data, error, count } = await query;
     if (error) {
@@ -80,7 +83,7 @@ async function listExecutions(options = {}) {
  *
  * Returns null if not found.
  */
-async function getExecutionById(id) {
+async function getExecutionById(id, userId) {
     const supabase = (0, supabase_1.getSupabaseClient)();
     const { data, error } = await supabase
         .from("workflow_executions")
@@ -102,6 +105,7 @@ async function getExecutionById(id) {
       )
     `)
         .eq("id", id)
+        .eq("user_id", userId ?? "")
         .single();
     if (error) {
         if (error.code === "PGRST116")
@@ -132,11 +136,15 @@ async function getExecutionById(id) {
  * Returns execution counts grouped by status.
  * Used by the runs page header to show summary stats.
  */
-async function getExecutionStats() {
+async function getExecutionStats(userId) {
     const supabase = (0, supabase_1.getSupabaseClient)();
-    const { data, error } = await supabase
+    let statsQuery = supabase
         .from("workflow_executions")
         .select("status");
+    if (userId) {
+        statsQuery = statsQuery.eq("user_id", userId);
+    }
+    const { data, error } = await statsQuery;
     if (error) {
         throw new Error(`Failed to fetch execution stats: ${error.message}`);
     }

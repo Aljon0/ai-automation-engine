@@ -1,22 +1,9 @@
 "use client";
 
-/**
- * app/register/page.tsx
- *
- * Phase 9 — Register Page
- *
- * Creates a new Supabase user account.
- * Redirects to / on success.
- */
-
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { register } from "@/lib/auth";
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
 
 type FormState =
   | { phase: "idle" }
@@ -24,74 +11,49 @@ type FormState =
   | { phase: "success" }
   | { phase: "error"; message: string };
 
-// ---------------------------------------------------------------------------
-// Page
-// ---------------------------------------------------------------------------
-
 export default function RegisterPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [state, setState] = useState<FormState>({ phase: "idle" });
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!email.trim() || !password.trim()) return;
-
-    if (password !== confirmPassword) {
-      setState({ phase: "error", message: "Passwords do not match." });
-      return;
-    }
-
-    if (password.length < 6) {
-      setState({
-        phase: "error",
-        message: "Password must be at least 6 characters.",
-      });
-      return;
-    }
-
+    if (password !== confirmPassword) { setState({ phase: "error", message: "Passwords do not match." }); return; }
+    if (password.length < 6) { setState({ phase: "error", message: "Password must be at least 6 characters." }); return; }
     setState({ phase: "loading" });
-
     const result = await register(email.trim(), password);
-
-    if (result.error) {
-      setState({ phase: "error", message: result.error });
-      return;
-    }
-
-    // Supabase may require email confirmation depending on project settings
-    // If email confirmation is disabled, user is logged in immediately
-    if (result.user) {
-      router.push("/");
-      router.refresh();
-    } else {
-      // Email confirmation required
-      setState({ phase: "success" });
-    }
+    if (result.error) { setState({ phase: "error", message: result.error }); return; }
+    if (result.user) { router.push("/"); router.refresh(); }
+    else setState({ phase: "success" });
   }
 
   const isLoading = state.phase === "loading";
+  const passwordsMatch = password === confirmPassword && confirmPassword.length > 0;
 
-  // Email confirmation sent
   if (state.phase === "success") {
     return (
-      <main className="min-h-screen bg-zinc-950 text-zinc-100 font-mono flex flex-col items-center justify-center px-4">
-        <div className="w-full max-w-sm text-center space-y-4">
-          <div className="w-12 h-12 rounded-full bg-emerald-950 border border-emerald-800 flex items-center justify-center mx-auto">
-            <span className="text-emerald-400 text-lg">✓</span>
-          </div>
-          <h2 className="text-lg font-semibold">Check your email</h2>
-          <p className="text-sm text-zinc-500">
-            We sent a confirmation link to{" "}
-            <span className="text-zinc-300">{email}</span>. Click the link to
-            activate your account.
+      <main style={{
+        minHeight: "100vh", background: "var(--color-bg)",
+        display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem",
+      }}>
+        <div style={{ width: "100%", maxWidth: 400, textAlign: "center" }}>
+          <div style={{
+            width: 56, height: 56, borderRadius: "50%",
+            background: "var(--color-success-bg)",
+            border: "1px solid var(--color-success)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            margin: "0 auto 1.25rem", fontSize: "1.5rem",
+          }}>✓</div>
+          <h2 style={{ fontSize: "1.25rem", fontWeight: 700, marginBottom: "0.5rem" }}>Check your email</h2>
+          <p style={{ fontSize: "0.875rem", color: "var(--color-text-muted)", marginBottom: "1.5rem" }}>
+            We sent a confirmation link to <strong style={{ color: "var(--color-text)" }}>{email}</strong>
           </p>
-          <Link
-            href="/login"
-            className="inline-block text-xs text-zinc-500 hover:text-zinc-300 transition-colors mt-4"
-          >
+          <Link href="/login" style={{ fontSize: "0.875rem", color: "var(--color-text-subtle)", textDecoration: "none" }}>
             Back to login →
           </Link>
         </div>
@@ -100,116 +62,129 @@ export default function RegisterPage() {
   }
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-100 font-mono flex flex-col items-center justify-center px-4">
+    <main style={{
+      minHeight: "100vh", background: "var(--color-bg)",
+      display: "flex", flexDirection: "column",
+      alignItems: "center", justifyContent: "center", padding: "1.5rem",
+    }}>
+      <div style={{ width: "100%", maxWidth: 400 }}>
 
-      {/* Header */}
-      <div className="mb-10 text-center">
-        <p className="text-xs tracking-[0.3em] text-zinc-500 uppercase mb-3">
-          AI Workflow Automation Engine
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Create Account
-        </h1>
-        <p className="text-sm text-zinc-500 mt-2">
-          Sign up to start automating tasks.
-        </p>
-      </div>
-
-      {/* Form */}
-      <div className="w-full max-w-sm">
-        <form onSubmit={handleSubmit} className="space-y-3">
-
-          {/* Email */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-zinc-500">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              disabled={isLoading}
-              required
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2.5
-                         text-sm text-zinc-100 placeholder-zinc-600
-                         focus:outline-none focus:border-zinc-600
-                         disabled:opacity-50 transition-colors"
-            />
+        <div style={{ textAlign: "center", marginBottom: "2.5rem" }}>
+          <div style={{
+            width: 48, height: 48, borderRadius: 12,
+            background: "var(--color-accent-subtle)",
+            border: "1px solid var(--color-accent)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            margin: "0 auto 1rem",
+          }}>
+            <span style={{ fontSize: "1.25rem" }}>⚡</span>
           </div>
+          <h1 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "0.375rem" }}>Create account</h1>
+          <p style={{ fontSize: "0.875rem", color: "var(--color-text-muted)" }}>
+            Sign up to start automating tasks
+          </p>
+        </div>
 
-          {/* Password */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-zinc-500">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="At least 6 characters"
-              disabled={isLoading}
-              required
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2.5
-                         text-sm text-zinc-100 placeholder-zinc-600
-                         focus:outline-none focus:border-zinc-600
-                         disabled:opacity-50 transition-colors"
-            />
-          </div>
+        <div className="card" style={{ padding: "1.75rem" }}>
+          <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
 
-          {/* Confirm Password */}
-          <div className="space-y-1.5">
-            <label className="text-xs text-zinc-500">Confirm Password</label>
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="••••••••"
-              disabled={isLoading}
-              required
-              className="w-full bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-2.5
-                         text-sm text-zinc-100 placeholder-zinc-600
-                         focus:outline-none focus:border-zinc-600
-                         disabled:opacity-50 transition-colors"
-            />
-          </div>
+            {/* Email */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
+              <label style={{ fontSize: "0.8125rem", fontWeight: 500, color: "var(--color-text-muted)" }}>Email</label>
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com" disabled={isLoading} required className="input" />
+            </div>
 
-          {/* Password match indicator */}
-          {confirmPassword && (
-            <p className={`text-xs px-1 ${
-              password === confirmPassword ? "text-emerald-400" : "text-red-400"
-            }`}>
-              {password === confirmPassword
-                ? "✓ Passwords match"
-                : "✗ Passwords do not match"}
-            </p>
-          )}
+            {/* Password */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
+              <label style={{ fontSize: "0.8125rem", fontWeight: 500, color: "var(--color-text-muted)" }}>Password</label>
+              <div style={{ position: "relative" }}>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password} onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At least 6 characters"
+                  disabled={isLoading} required className="input"
+                  style={{ paddingRight: "2.75rem" }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  style={{
+                    position: "absolute", right: "0.75rem", top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "none", border: "none", cursor: "pointer",
+                    color: "var(--color-text-faint)", fontSize: "1rem",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    padding: "0.25rem",
+                  }}
+                  tabIndex={-1}
+                >
+                  {showPassword ? "🙈" : "👁️"}
+                </button>
+              </div>
+            </div>
 
-          {/* Error */}
-          {state.phase === "error" && (
-            <p className="text-xs text-red-400 px-1">{state.message}</p>
-          )}
+            {/* Confirm Password */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
+              <label style={{ fontSize: "0.8125rem", fontWeight: 500, color: "var(--color-text-muted)" }}>Confirm Password</label>
+              <div style={{ position: "relative" }}>
+                <input
+                  type={showConfirm ? "text" : "password"}
+                  value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="••••••••"
+                  disabled={isLoading} required className="input"
+                  style={{
+                    paddingRight: "2.75rem",
+                    borderColor: confirmPassword
+                      ? (passwordsMatch ? "var(--color-success)" : "var(--color-error)")
+                      : undefined,
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirm(!showConfirm)}
+                  style={{
+                    position: "absolute", right: "0.75rem", top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "none", border: "none", cursor: "pointer",
+                    color: "var(--color-text-faint)", fontSize: "1rem",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    padding: "0.25rem",
+                  }}
+                  tabIndex={-1}
+                >
+                  {showConfirm ? "🙈" : "👁️"}
+                </button>
+              </div>
+              {confirmPassword && (
+                <p style={{ fontSize: "0.75rem", color: passwordsMatch ? "var(--color-success)" : "var(--color-error)" }}>
+                  {passwordsMatch ? "✓ Passwords match" : "✗ Passwords do not match"}
+                </p>
+              )}
+            </div>
 
-          {/* Submit */}
-          <button
-            type="submit"
-            disabled={
-              isLoading ||
-              !email.trim() ||
-              !password.trim() ||
-              password !== confirmPassword
-            }
-            className="w-full py-2.5 rounded-lg bg-zinc-100 text-zinc-900 text-sm font-medium
-                       hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed
-                       transition-colors mt-2"
-          >
-            {isLoading ? "Creating account..." : "Create Account"}
-          </button>
-        </form>
+            {/* Error */}
+            {state.phase === "error" && (
+              <div style={{ padding: "0.625rem 0.875rem", background: "var(--color-error-bg)", border: "1px solid var(--color-error)", borderRadius: 8 }}>
+                <p style={{ fontSize: "0.8125rem", color: "#fca5a5" }}>{state.message}</p>
+              </div>
+            )}
 
-        {/* Login link */}
-        <p className="text-center text-xs text-zinc-600 mt-6">
+            {/* Submit */}
+            <button
+              type="submit"
+              disabled={isLoading || !email.trim() || !password.trim() || password !== confirmPassword}
+              className="btn-primary"
+              style={{ width: "100%", padding: "0.625rem", marginTop: "0.25rem" }}
+            >
+              {isLoading ? "Creating account..." : "Create Account"}
+            </button>
+          </form>
+        </div>
+
+        <p style={{ textAlign: "center", fontSize: "0.8125rem", color: "var(--color-text-faint)", marginTop: "1.25rem" }}>
           Already have an account?{" "}
-          <Link
-            href="/login"
-            className="text-zinc-400 hover:text-zinc-200 transition-colors"
-          >
+          <Link href="/login" style={{ color: "var(--color-text-muted)", textDecoration: "none", fontWeight: 500 }}>
             Sign in
           </Link>
         </p>

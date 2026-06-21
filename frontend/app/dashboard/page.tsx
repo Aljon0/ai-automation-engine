@@ -3,22 +3,17 @@
 /**
  * app/dashboard/page.tsx
  *
- * Phase 8 — Analytics Dashboard
- *
- * Displays:
- * - Summary stats (total, success rate, avg duration, active workflows)
- * - Per-workflow usage breakdown with bar chart
- * - Recent execution timeline
+ * Phase 10 — Redesigned Analytics Dashboard
  */
 
-import {
-  AnalyticsData,
-  fetchAnalytics,
-  RecentExecution,
-  WorkflowMetric,
-} from "@/lib/api";
+import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import {
+  fetchAnalytics,
+  AnalyticsData,
+  WorkflowMetric,
+  RecentExecution,
+} from "@/lib/api";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -35,12 +30,9 @@ type DataState =
 
 function formatDuration(ms: number): string {
   if (ms === 0) return "—";
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
-}
-
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleString();
+  const absMs = Math.abs(ms);
+  if (absMs < 1000) return `${absMs}ms`;
+  return `${(absMs / 1000).toFixed(1)}s`;
 }
 
 function formatTimeAgo(iso: string): string {
@@ -52,6 +44,12 @@ function formatTimeAgo(iso: string): string {
   if (mins < 60) return `${mins}m ago`;
   if (hours < 24) return `${hours}h ago`;
   return `${days}d ago`;
+}
+
+function successRateColor(rate: number): string {
+  if (rate >= 80) return "var(--color-success)";
+  if (rate >= 50) return "var(--color-warning)";
+  return "var(--color-error)";
 }
 
 // ---------------------------------------------------------------------------
@@ -67,129 +65,121 @@ export default function DashboardPage() {
       .catch((err) =>
         setState({
           phase: "error",
-          message:
-            err instanceof Error ? err.message : "Failed to load analytics",
-        }),
+          message: err instanceof Error ? err.message : "Failed to load analytics",
+        })
       );
   }, []);
 
   return (
-    <main className="min-h-screen bg-zinc-950 text-zinc-100 font-mono px-4 py-12 pt-20">
-      <div className="max-w-4xl mx-auto space-y-8">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs tracking-[0.3em] text-zinc-500 uppercase mb-1">
-              AI Workflow Automation Engine
-            </p>
-            <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/runs"
-              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors border border-zinc-800 rounded-md px-3 py-1.5"
-            >
-              View Runs
-            </Link>
-            <Link
-              href="/"
-              className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors border border-zinc-800 rounded-md px-3 py-1.5"
-            >
-              New Task
-            </Link>
-          </div>
-        </div>
+    <div className="page-container">
 
-        {/* Loading */}
-        {state.phase === "loading" && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {[1, 2, 3, 4].map((i) => (
-                <div
-                  key={i}
-                  className="border border-zinc-800 rounded-lg p-4 h-20 animate-pulse bg-zinc-900/40"
-                />
-              ))}
-            </div>
-            <div className="border border-zinc-800 rounded-lg p-6 h-48 animate-pulse bg-zinc-900/40" />
-            <div className="border border-zinc-800 rounded-lg p-6 h-64 animate-pulse bg-zinc-900/40" />
-          </div>
-        )}
-
-        {/* Error */}
-        {state.phase === "error" && (
-          <div className="border border-red-800 rounded-lg px-4 py-3">
-            <p className="text-xs text-red-400">{state.message}</p>
-          </div>
-        )}
-
-        {/* Dashboard content */}
-        {state.phase === "success" && (
-          <>
-            <SummaryCards data={state.data} />
-            <WorkflowBreakdown workflows={state.data.by_workflow} />
-            <RecentActivity executions={state.data.recent} />
-            <p className="text-xs text-zinc-700 text-right">
-              Generated {formatTime(state.data.generated_at)}
-            </p>
-          </>
-        )}
+      {/* Header */}
+      <div style={{ marginBottom: "2rem" }}>
+        <h1 style={{ fontSize: "1.5rem", fontWeight: 700, marginBottom: "0.5rem" }}>
+          Dashboard
+        </h1>
+        <p style={{ fontSize: "0.875rem", color: "var(--color-text-muted)" }}>
+          Operational metrics for your automation workflows.
+        </p>
       </div>
-    </main>
+
+      {/* Loading */}
+      {state.phase === "loading" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.75rem" }}>
+            {[1,2,3,4].map(i => (
+              <div key={i} style={{ height: 96, borderRadius: 12, background: "var(--color-surface)", animation: "pulse 1.5s infinite" }} />
+            ))}
+          </div>
+          <div style={{ height: 240, borderRadius: 12, background: "var(--color-surface)", animation: "pulse 1.5s infinite" }} />
+          <div style={{ height: 320, borderRadius: 12, background: "var(--color-surface)", animation: "pulse 1.5s infinite" }} />
+        </div>
+      )}
+
+      {/* Error */}
+      {state.phase === "error" && (
+        <div className="card" style={{ borderColor: "var(--color-error)", padding: "1rem 1.25rem" }}>
+          <p style={{ fontSize: "0.875rem", color: "var(--color-error)" }}>{state.message}</p>
+        </div>
+      )}
+
+      {/* Dashboard */}
+      {state.phase === "success" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+
+          {/* Summary Cards */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.75rem" }}>
+            <SummaryCard
+              label="Total Executions"
+              value={state.data.summary.total_executions.toString()}
+              sub={`${state.data.summary.pending_executions} pending`}
+              valueColor="var(--color-text)"
+            />
+            <SummaryCard
+              label="Success Rate"
+              value={`${state.data.summary.success_rate}%`}
+              sub={`${state.data.summary.successful_executions} of ${state.data.summary.total_executions} succeeded`}
+              valueColor={successRateColor(state.data.summary.success_rate)}
+            />
+            <SummaryCard
+              label="Avg Duration"
+              value={formatDuration(state.data.summary.avg_duration_ms)}
+              sub="per completed execution"
+              valueColor="var(--color-text)"
+            />
+            <SummaryCard
+              label="Active Workflows"
+              value={state.data.summary.active_workflows.toString()}
+              sub={`${state.data.summary.failed_executions} failed executions`}
+              valueColor="var(--color-text)"
+            />
+          </div>
+
+          {/* Workflow Breakdown */}
+          <WorkflowBreakdown workflows={state.data.by_workflow} />
+
+          {/* Recent Activity */}
+          <RecentActivity executions={state.data.recent} />
+
+          {/* Footer */}
+          <p style={{ fontSize: "0.6875rem", color: "var(--color-text-faint)", textAlign: "right" }}>
+            Generated {new Date(state.data.generated_at).toLocaleString()}
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// SummaryCards
+// SummaryCard
 // ---------------------------------------------------------------------------
 
-function SummaryCards({ data }: { data: AnalyticsData }) {
-  const { summary } = data;
-
-  const cards = [
-    {
-      label: "Total Runs",
-      value: summary.total_executions.toString(),
-      sub: `${summary.pending_executions} pending`,
-      color: "text-zinc-100",
-    },
-    {
-      label: "Success Rate",
-      value: `${summary.success_rate}%`,
-      sub: `${summary.successful_executions} succeeded`,
-      color:
-        summary.success_rate >= 80
-          ? "text-emerald-400"
-          : summary.success_rate >= 50
-            ? "text-yellow-400"
-            : "text-red-400",
-    },
-    {
-      label: "Avg Duration",
-      value: formatDuration(summary.avg_duration_ms),
-      sub: "per execution",
-      color: "text-zinc-100",
-    },
-    {
-      label: "Active Workflows",
-      value: summary.active_workflows.toString(),
-      sub: `${summary.failed_executions} failed runs`,
-      color: "text-zinc-100",
-    },
-  ];
-
+function SummaryCard({
+  label,
+  value,
+  sub,
+  valueColor,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  valueColor: string;
+}) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-      {cards.map(({ label, value, sub, color }) => (
-        <div
-          key={label}
-          className="border border-zinc-800 rounded-lg p-4 space-y-1"
-        >
-          <p className="text-xs text-zinc-600">{label}</p>
-          <p className={`text-2xl font-semibold ${color}`}>{value}</p>
-          <p className="text-xs text-zinc-600">{sub}</p>
-        </div>
-      ))}
+    <div className="card" style={{ padding: "1.25rem" }}>
+      <p style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", marginBottom: "0.5rem" }}>
+        {label}
+      </p>
+      <p style={{
+        fontSize: "2rem", fontWeight: 700, letterSpacing: "-0.03em",
+        color: valueColor, marginBottom: "0.25rem", lineHeight: 1,
+      }}>
+        {value}
+      </p>
+      <p style={{ fontSize: "0.75rem", color: "var(--color-text-faint)" }}>
+        {sub}
+      </p>
     </div>
   );
 }
@@ -202,73 +192,92 @@ function WorkflowBreakdown({ workflows }: { workflows: WorkflowMetric[] }) {
   const maxRuns = Math.max(...workflows.map((w) => w.total_runs), 1);
 
   return (
-    <div className="border border-zinc-800 rounded-lg overflow-hidden">
-      <div className="px-5 py-4 border-b border-zinc-800">
-        <p className="text-xs tracking-widest text-zinc-500 uppercase">
-          Workflow Usage
-        </p>
+    <div className="card">
+      <div className="card-header">
+        <span className="section-label">Workflow Usage</span>
+        <span style={{ fontSize: "0.75rem", color: "var(--color-text-faint)" }}>
+          {workflows.length} workflows
+        </span>
       </div>
 
       {workflows.length === 0 ? (
-        <div className="px-5 py-8 text-center">
-          <p className="text-xs text-zinc-600">No workflow executions yet.</p>
+        <div style={{ padding: "3rem 1.25rem", textAlign: "center" }}>
+          <p style={{ fontSize: "0.875rem", color: "var(--color-text-muted)", marginBottom: "0.5rem" }}>
+            No executions yet.
+          </p>
+          <Link href="/" style={{ fontSize: "0.8125rem", color: "var(--color-text-subtle)", textDecoration: "none" }}>
+            Run your first task →
+          </Link>
         </div>
       ) : (
-        <div className="divide-y divide-zinc-800/60">
-          {workflows.map((wf) => (
-            <div key={wf.workflow_id} className="px-5 py-4 space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-xs font-medium text-zinc-200 truncate">
+        <div style={{ padding: "0.5rem 0" }}>
+          {workflows.map((wf, idx) => (
+            <div
+              key={wf.workflow_id}
+              style={{
+                padding: "1rem 1.25rem",
+                borderTop: idx > 0 ? "1px solid var(--color-border-subtle)" : undefined,
+              }}
+            >
+              {/* Name + stats row */}
+              <div style={{
+                display: "flex", alignItems: "center",
+                justifyContent: "space-between", gap: "1rem",
+                marginBottom: "0.625rem",
+              }}>
+                <div style={{ minWidth: 0 }}>
+                  <span style={{ fontSize: "0.875rem", fontWeight: 500, color: "var(--color-text)" }}>
                     {wf.workflow_name}
                   </span>
-                  <span className="text-xs text-zinc-600 font-mono shrink-0">
+                  <code style={{
+                    fontSize: "0.6875rem", color: "var(--color-text-faint)",
+                    background: "var(--color-bg)", padding: "0.125rem 0.375rem",
+                    borderRadius: 4, marginLeft: "0.5rem",
+                  }}>
                     {wf.intent_key}
-                  </span>
+                  </code>
                 </div>
-                <div className="flex items-center gap-4 shrink-0 ml-4">
-                  <span className="text-xs text-zinc-500">
+                <div style={{ display: "flex", alignItems: "center", gap: "1rem", flexShrink: 0 }}>
+                  <span style={{ fontSize: "0.75rem", color: "var(--color-text-faint)" }}>
                     {wf.total_runs} runs
                   </span>
-                  <span
-                    className={`text-xs font-medium ${
-                      wf.success_rate >= 80
-                        ? "text-emerald-400"
-                        : wf.success_rate >= 50
-                          ? "text-yellow-400"
-                          : "text-red-400"
-                    }`}
-                  >
+                  <span style={{
+                    fontSize: "0.8125rem", fontWeight: 600,
+                    color: successRateColor(wf.success_rate),
+                  }}>
                     {wf.success_rate}%
                   </span>
-                  <span className="text-xs text-zinc-600">
+                  <span style={{ fontSize: "0.75rem", color: "var(--color-text-faint)" }}>
                     {formatDuration(wf.avg_duration_ms)}
                   </span>
                 </div>
               </div>
 
-              {/* Usage bar */}
-              <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden">
-                <div className="h-full flex">
-                  <div
-                    className="bg-emerald-500 h-full rounded-full transition-all"
-                    style={{
-                      width: `${(wf.total_runs / maxRuns) * 100}%`,
-                      opacity: 0.8,
-                    }}
-                  />
-                </div>
+              {/* Progress bar */}
+              <div style={{
+                height: 4, background: "var(--color-surface-2)",
+                borderRadius: 2, overflow: "hidden", marginBottom: "0.5rem",
+              }}>
+                <div style={{
+                  height: "100%",
+                  width: `${(wf.total_runs / maxRuns) * 100}%`,
+                  background: "var(--color-accent)",
+                  borderRadius: 2,
+                  transition: "width 0.5s ease",
+                }} />
               </div>
 
-              {/* Success / Failed breakdown */}
-              <div className="flex items-center gap-3 text-xs text-zinc-600">
-                <span className="text-emerald-500">
+              {/* Success/failed breakdown */}
+              <div style={{ display: "flex", gap: "1rem" }}>
+                <span style={{ fontSize: "0.6875rem", color: "var(--color-success)" }}>
                   {wf.successful_runs} success
                 </span>
-                <span>·</span>
-                <span className="text-red-400">{wf.failed_runs} failed</span>
-                <span>·</span>
-                <span>avg {formatDuration(wf.avg_duration_ms)}</span>
+                <span style={{ fontSize: "0.6875rem", color: "var(--color-error)" }}>
+                  {wf.failed_runs} failed
+                </span>
+                <span style={{ fontSize: "0.6875rem", color: "var(--color-text-faint)" }}>
+                  avg {formatDuration(wf.avg_duration_ms)}
+                </span>
               </div>
             </div>
           ))}
@@ -284,61 +293,83 @@ function WorkflowBreakdown({ workflows }: { workflows: WorkflowMetric[] }) {
 
 function RecentActivity({ executions }: { executions: RecentExecution[] }) {
   return (
-    <div className="border border-zinc-800 rounded-lg overflow-hidden">
-      <div className="px-5 py-4 border-b border-zinc-800">
-        <p className="text-xs tracking-widest text-zinc-500 uppercase">
-          Recent Activity
-        </p>
+    <div className="card">
+      <div className="card-header">
+        <span className="section-label">Recent Activity</span>
+        <Link
+          href="/runs"
+          style={{ fontSize: "0.75rem", color: "var(--color-text-subtle)", textDecoration: "none" }}
+        >
+          View all →
+        </Link>
       </div>
 
       {executions.length === 0 ? (
-        <div className="px-5 py-8 text-center">
-          <p className="text-xs text-zinc-600">No executions yet.</p>
-          <Link
-            href="/"
-            className="text-xs text-zinc-500 hover:text-zinc-400 mt-2 inline-block transition-colors"
-          >
+        <div style={{ padding: "3rem 1.25rem", textAlign: "center" }}>
+          <p style={{ fontSize: "0.875rem", color: "var(--color-text-muted)", marginBottom: "0.5rem" }}>
+            No executions yet.
+          </p>
+          <Link href="/" style={{ fontSize: "0.8125rem", color: "var(--color-text-subtle)", textDecoration: "none" }}>
             Run your first task →
           </Link>
         </div>
       ) : (
-        <div className="divide-y divide-zinc-800/60">
-          {executions.map((exec) => (
-            <div key={exec.id} className="px-5 py-3 flex items-center gap-3">
-              {/* Status dot */}
-              <span
-                className={`w-2 h-2 rounded-full shrink-0 ${
-                  exec.status === "success"
-                    ? "bg-emerald-400"
-                    : exec.status === "failed"
-                      ? "bg-red-500"
-                      : "bg-zinc-500 animate-pulse"
-                }`}
-              />
+        <div>
+          {executions.map((exec, idx) => {
+            const durationMs = exec.duration_ms;
+            const statusColor =
+              exec.status === "success" ? "var(--color-success)"
+              : exec.status === "failed" ? "var(--color-error)"
+              : "var(--color-text-faint)";
 
-              {/* Input preview */}
-              <span className="text-xs text-zinc-300 truncate flex-1 min-w-0">
-                {exec.input}
-              </span>
+            return (
+              <div
+                key={exec.id}
+                style={{
+                  display: "flex", alignItems: "center", gap: "0.875rem",
+                  padding: "0.75rem 1.25rem",
+                  borderTop: idx > 0 ? "1px solid var(--color-border-subtle)" : undefined,
+                }}
+              >
+                {/* Status dot */}
+                <div style={{
+                  width: 7, height: 7, borderRadius: "50%",
+                  background: statusColor, flexShrink: 0,
+                  animation: exec.status === "pending" ? "pulse 1s infinite" : undefined,
+                }} />
 
-              {/* Workflow name */}
-              <span className="text-xs text-zinc-600 shrink-0 hidden sm:block">
-                {exec.workflow_name}
-              </span>
-
-              {/* Duration */}
-              {exec.duration_ms !== null && (
-                <span className="text-xs text-zinc-600 shrink-0">
-                  {formatDuration(exec.duration_ms)}
+                {/* Input */}
+                <span style={{
+                  fontSize: "0.875rem", color: "var(--color-text)",
+                  flex: 1, minWidth: 0, overflow: "hidden",
+                  textOverflow: "ellipsis", whiteSpace: "nowrap",
+                }}>
+                  {exec.input}
                 </span>
-              )}
 
-              {/* Time ago */}
-              <span className="text-xs text-zinc-700 shrink-0">
-                {formatTimeAgo(exec.created_at)}
-              </span>
-            </div>
-          ))}
+                {/* Workflow */}
+                <span style={{
+                  fontSize: "0.75rem", color: "var(--color-text-muted)",
+                  flexShrink: 0,
+                }}>
+                  {exec.workflow_name}
+                </span>
+
+                {/* Duration */}
+                <span style={{ fontSize: "0.75rem", color: "var(--color-text-faint)", flexShrink: 0 }}>
+                  {formatDuration(durationMs ?? 0)}
+                </span>
+
+                {/* Time ago */}
+                <span style={{
+                  fontSize: "0.75rem", color: "var(--color-text-faint)",
+                  flexShrink: 0, minWidth: 60, textAlign: "right",
+                }}>
+                  {formatTimeAgo(exec.created_at)}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

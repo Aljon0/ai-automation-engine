@@ -31,7 +31,7 @@ async function findWorkflowByIntent(intent_key) {
 // ---------------------------------------------------------------------------
 // Execution tracking
 // ---------------------------------------------------------------------------
-async function createExecution(workflow_id, input, file) {
+async function createExecution(workflow_id, input, file, userId) {
     const supabase = (0, supabase_1.getSupabaseClient)();
     const { data, error } = await supabase
         .from("workflow_executions")
@@ -42,6 +42,7 @@ async function createExecution(workflow_id, input, file) {
         file_url: file?.file_url ?? null,
         file_name: file?.file_name ?? null,
         file_type: file?.file_type ?? null,
+        user_id: userId ?? null,
     })
         .select()
         .single();
@@ -76,9 +77,9 @@ async function updateExecution(execution_id, update) {
  * @param input    - The raw user input string
  * @param file     - Optional file metadata from a prior upload
  */
-async function executeWorkflow(workflow, input, file) {
+async function executeWorkflow(workflow, input, file, userId) {
     // 1. Create pending record
-    const execution = await createExecution(workflow.id, input, file);
+    const execution = await createExecution(workflow.id, input, file, userId);
     try {
         // 2. Build n8n payload — include file fields if present
         const webhookPayload = { input };
