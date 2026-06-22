@@ -38,8 +38,8 @@ services:
     environment:
       - PORT=4000
       - NODE_ENV=production
-      - N8N_BASE_URL=http://n8n:5678
-      - CORS_ORIGIN=http://localhost:3000
+      - CORS_ORIGIN=https://ai-automation-engine-eight.vercel.app/
+      - N8N_BASE_URL=https://ai-automation-engine-n8n.onrender.com
     depends_on:
       n8n:
         condition: service_healthy
