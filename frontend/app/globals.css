@@ -246,3 +246,23 @@ h1, h2, h3, h4 {
   background: var(--color-surface);
   border-color: var(--color-border-subtle);
 }
+
+/* ---------------------------------------------------------------------------
+   Responsive nav
+--------------------------------------------------------------------------- */
+
+/* Show email on wider screens only */
+@media (min-width: 640px) {
+  .nav-email {
+    display: block !important;
+  }
+}
+
+/* Tighten page containers on mobile */
+@media (max-width: 640px) {
+  .page-container,
+  .page-container-narrow {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}

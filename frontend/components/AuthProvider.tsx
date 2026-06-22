@@ -113,12 +113,12 @@ function TopNav({ user, onLogout, pathname }: TopNavProps) {
         style={{
           maxWidth: 1024,
           margin: "0 auto",
-          padding: "0 1.5rem",
+          padding: "0 1rem",
           height: "100%",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          gap: "1rem",
+          gap: "0.5rem",
         }}
       >
         {/* Brand */}
@@ -141,7 +141,7 @@ function TopNav({ user, onLogout, pathname }: TopNavProps) {
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "0.25rem",
+            gap: "0.125rem",
             flex: 1,
           }}
         >
@@ -162,12 +162,13 @@ function TopNav({ user, onLogout, pathname }: TopNavProps) {
                     ? "var(--color-text)"
                     : "var(--color-text-subtle)",
                   textDecoration: "none",
-                  padding: "0.375rem 0.75rem",
+                  padding: "0.375rem 0.625rem",
                   borderRadius: "6px",
                   background: isActive
                     ? "var(--color-surface-2)"
                     : "transparent",
                   transition: "color 0.15s, background 0.15s",
+                  whiteSpace: "nowrap",
                 }}
               >
                 {label}
@@ -181,27 +182,29 @@ function TopNav({ user, onLogout, pathname }: TopNavProps) {
           style={{
             display: "flex",
             alignItems: "center",
-            gap: "0.75rem",
+            gap: "0.5rem",
             flexShrink: 0,
           }}
         >
+          {/* Email — hidden on small screens */}
           <span
             style={{
               fontSize: "0.75rem",
               color: "var(--color-text-faint)",
-              maxWidth: 180,
+              maxWidth: 160,
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
+              display: "none",
             }}
-            className="hidden-mobile"
+            className="nav-email"
           >
             {user.email}
           </span>
           <button
             onClick={onLogout}
             className="btn-ghost"
-            style={{ fontSize: "0.75rem" }}
+            style={{ fontSize: "0.75rem", whiteSpace: "nowrap", padding: "0.375rem 0.625rem" }}
           >
             Sign Out
           </button>
